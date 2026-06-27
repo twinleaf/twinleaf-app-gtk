@@ -11,9 +11,9 @@
 //! (they back later milestones: device picker, RPC sidebar, inspector).
 #![allow(dead_code)]
 
-use std::collections::HashMap;
 use serde::Deserialize;
 use serde_json::Value;
+use std::collections::HashMap;
 use twinleaf_core::ColumnKeyDto;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -135,7 +135,9 @@ impl RpcInfo {
     }
     /// Shown in the RPC list at all?
     pub fn is_visible(&self) -> bool {
-        !self.name.is_empty() && !self.is_internal() && (self.readable || self.writable || self.is_capture())
+        !self.name.is_empty()
+            && !self.is_internal()
+            && (self.readable || self.writable || self.is_capture())
     }
     pub fn is_numeric(&self) -> bool {
         matches!(
@@ -216,7 +218,12 @@ pub fn default_display_column(devices: &[DeviceInfo]) -> Option<ColumnKeyDto> {
         .flat_map(|device| &device.streams)
         .filter(|stream| !stream.columns.is_empty())
         .min_by_key(|stream| stream.stream_id)
-        .and_then(|stream| stream.columns.iter().min_by_key(|column| column.key.column_index))
+        .and_then(|stream| {
+            stream
+                .columns
+                .iter()
+                .min_by_key(|column| column.key.column_index)
+        })
         .map(|column| column.key.clone())
 }
 

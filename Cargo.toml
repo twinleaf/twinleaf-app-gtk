@@ -8,6 +8,11 @@
 [workspace]
 resolver = "2"
 members = ["twinleaf-core", "twinleaf-gtk"]
+# The vendored twinleaf-rust crates are an upstream dependency, not first-party
+# code. Excluding them keeps `cargo fmt --all` / `clippy --workspace` (and CI)
+# from formatting or linting the submodule, while twinleaf-core's path
+# dependency on it still resolves normally.
+exclude = ["vendor"]
 
 [workspace.package]
 version = "0.1.0"

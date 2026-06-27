@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.twinleaf.AppGtk</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+  <name>Twinleaf</name>
+  <summary>Discover, plot, log, and configure Twinleaf quantum sensors</summary>
+  <description>
+    <p>
+      Twinleaf is a cross-platform GTK4 application for working with Twinleaf
+      quantum sensors over the TIO protocol. It discovers devices, streams and
+      plots their data live (time series and FFT), records to .tio logs,
+      exports CSV/HDF5, plays back recordings, and configures sensors through
+      their RPC interface.
+    </p>
+  </description>
+  <launchable type="desktop-id">com.twinleaf.AppGtk.desktop</launchable>
+  <categories>
+    <category>Science</category>
+    <category>Utility</category>
+  </categories>
+  <url type="homepage">https://twinleaf.com</url>
+  <url type="bugtracker">https://github.com/twinleaf/twinleaf-app-gtk/issues</url>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-06-27"/>
+  </releases>
+</component>

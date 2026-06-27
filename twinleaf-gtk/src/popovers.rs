@@ -131,8 +131,14 @@ impl FirmwarePopover {
                 .get("deviceName")
                 .and_then(|v| v.as_str())
                 .unwrap_or(route.as_str());
-            let cur = entry.get("currentVersion").and_then(|v| v.as_str()).unwrap_or("?");
-            let new = entry.get("newVersion").and_then(|v| v.as_str()).unwrap_or("?");
+            let cur = entry
+                .get("currentVersion")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            let new = entry
+                .get("newVersion")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
 
             let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
             let info = gtk::Label::new(Some(&format!("{name}\n{cur}  →  {new}")));
@@ -155,7 +161,10 @@ impl FirmwarePopover {
     /// Update from an `upgradeProgress` payload.
     pub fn set_progress(&self, value: &Value) {
         let phase = value.get("phase").and_then(|v| v.as_str()).unwrap_or("");
-        let message = value.get("message").and_then(|v| v.as_str()).unwrap_or(phase);
+        let message = value
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or(phase);
         self.progress_label.set_visible(true);
         self.progress_label.set_text(message);
         self.progress_bar.set_visible(true);
@@ -313,7 +322,9 @@ impl DevicePopover {
         // "New connection" box: a URL field + a "+" button. For a multi-device
         // session, space-separate the URLs (the core mounts each at /0, /1, …).
         let add_entry = gtk::Entry::new();
-        add_entry.set_placeholder_text(Some("tcp://host:port   (space-separate for several devices)"));
+        add_entry.set_placeholder_text(Some(
+            "tcp://host:port   (space-separate for several devices)",
+        ));
         add_entry.set_hexpand(true);
         let add_btn = gtk::Button::from_icon_name("tl-add-symbolic");
         add_btn.set_tooltip_text(Some("Add this connection"));
@@ -491,8 +502,16 @@ impl DevicePopover {
             row.set_margin_bottom(4);
             row.set_margin_start(4);
             row.set_margin_end(4);
-            let title = if dev.label.is_empty() { &dev.url } else { &dev.label };
-            let detail = if dev.detail.is_empty() { &dev.url } else { &dev.detail };
+            let title = if dev.label.is_empty() {
+                &dev.url
+            } else {
+                &dev.label
+            };
+            let detail = if dev.detail.is_empty() {
+                &dev.url
+            } else {
+                &dev.detail
+            };
             let info = gtk::Box::new(gtk::Orientation::Vertical, 0);
             info.set_hexpand(true);
             let name = gtk::Label::new(Some(title));

@@ -209,8 +209,13 @@ impl Sidebar {
                     let unified_multi =
                         rpc.members.len() >= 2 && !rpc.rep.is_action() && !rpc.rep.is_capture();
                     if unified_multi {
-                        let (row_widget, combined) =
-                            build_rpc_row(&rpc.rep, &rpc.members, &self.state, &self.controls, None);
+                        let (row_widget, combined) = build_rpc_row(
+                            &rpc.rep,
+                            &rpc.members,
+                            &self.state,
+                            &self.controls,
+                            None,
+                        );
                         self.content.append(&row_widget);
 
                         let container = gtk::Box::new(gtk::Orientation::Vertical, 2);
@@ -239,8 +244,13 @@ impl Sidebar {
                             values: RefCell::new(HashMap::new()),
                         });
                     } else {
-                        let (row_widget, control) =
-                            build_rpc_row(&rpc.rep, &rpc.members, &self.state, &self.controls, None);
+                        let (row_widget, control) = build_rpc_row(
+                            &rpc.rep,
+                            &rpc.members,
+                            &self.state,
+                            &self.controls,
+                            None,
+                        );
                         self.content.append(&row_widget);
                         self.rpc_rows.borrow_mut().push(RpcRow {
                             members: rpc.members.clone(),
@@ -404,7 +414,10 @@ fn build_group(members: &[&DeviceInfo], unified: bool) -> Group {
     // member's matching column key (same stream id + column index).
     let mut streams = Vec::new();
     for stream in &first.streams {
-        let title = format!("{}   ·   {:.1} Hz", stream.name, stream.effective_sampling_rate);
+        let title = format!(
+            "{}   ·   {:.1} Hz",
+            stream.name, stream.effective_sampling_rate
+        );
         let mut channels = Vec::new();
         for col in &stream.columns {
             let mut keys: Vec<ColumnKeyDto> = members
@@ -458,9 +471,7 @@ fn member_column_key(d: &DeviceInfo, target: &ColumnKeyDto) -> Option<ColumnKeyD
     d.streams
         .iter()
         .flat_map(|s| &s.columns)
-        .find(|c| {
-            c.key.stream_id == target.stream_id && c.key.column_index == target.column_index
-        })
+        .find(|c| c.key.stream_id == target.stream_id && c.key.column_index == target.column_index)
         .map(|c| c.key.clone())
 }
 
@@ -567,7 +578,11 @@ fn build_rpc_row(
     } else if rpc.is_numeric() || rpc.is_string() {
         let entry = gtk::Entry::new();
         entry.set_width_chars(10);
-        let initial = rpc.value.as_ref().map(model::value_to_string).unwrap_or_default();
+        let initial = rpc
+            .value
+            .as_ref()
+            .map(model::value_to_string)
+            .unwrap_or_default();
         entry.set_text(&initial);
         entry.set_editable(rpc.writable);
         let baseline = Rc::new(RefCell::new(initial));
@@ -643,7 +658,10 @@ fn build_rpc_row(
         RpcControl::Field(entry, baseline, focused)
     } else {
         let label = gtk::Label::new(Some(
-            &rpc.value.as_ref().map(model::value_to_string).unwrap_or_else(|| "—".into()),
+            &rpc.value
+                .as_ref()
+                .map(model::value_to_string)
+                .unwrap_or_else(|| "—".into()),
         ));
         label.set_xalign(1.0);
         row.append(&label);
@@ -771,7 +789,9 @@ struct UnifiedGroup {
 
 impl UnifiedGroup {
     fn note(&self, route: &str, value: &Value) {
-        self.values.borrow_mut().insert(route.to_string(), value.clone());
+        self.values
+            .borrow_mut()
+            .insert(route.to_string(), value.clone());
         let vals = self.values.borrow();
         let reported: Vec<&Value> = self
             .members
@@ -841,13 +861,20 @@ pub(crate) fn step_digit(text: &str, caret: usize, dir: i64) -> Option<(String, 
     } else {
         -((di - dot) as i32)
     };
-    let frac_digits = if dot < chars.len() { chars.len() - dot - 1 } else { 0 };
+    let frac_digits = if dot < chars.len() {
+        chars.len() - dot - 1
+    } else {
+        0
+    };
     let stepped = value + 10f64.powi(power) * dir as f64;
     let stepped = if stepped == 0.0 { 0.0 } else { stepped };
     let new_text = format!("{stepped:.frac_digits$}");
     // Keep the caret on the same place-value digit even if the length changed.
     let new_chars: Vec<char> = new_text.chars().collect();
-    let new_dot = new_chars.iter().position(|&c| c == '.').unwrap_or(new_chars.len());
+    let new_dot = new_chars
+        .iter()
+        .position(|&c| c == '.')
+        .unwrap_or(new_chars.len());
     let new_di: isize = if power >= 0 {
         new_dot as isize - 1 - power as isize
     } else {

@@ -114,7 +114,11 @@ impl MainControls {
             hi = lo + 1.0;
         }
         let integer = is_integer_rpc(rpc);
-        let step = if integer { 1.0 } else { ((hi - lo) / 200.0).max(f64::MIN_POSITIVE) };
+        let step = if integer {
+            1.0
+        } else {
+            ((hi - lo) / 200.0).max(f64::MIN_POSITIVE)
+        };
         let adj = gtk::Adjustment::new(value, lo, hi, step, step * 10.0, 0.0);
 
         // macOS-style layout: the setting name (with a remove button), the slider
@@ -311,12 +315,7 @@ impl MainControls {
 
     /// Add (or re-trigger) a capture graph in the main view (from the sidebar's
     /// "Capture" button).
-    pub fn add_capture(
-        self: &Rc<Self>,
-        _rpc: &RpcInfo,
-        members: &[(String, String)],
-        label: &str,
-    ) {
+    pub fn add_capture(self: &Rc<Self>, _rpc: &RpcInfo, members: &[(String, String)], label: &str) {
         if self.captures.borrow().iter().any(|c| c.members == members) {
             self.write_all(members, None); // already shown — just trigger again
             return;
@@ -528,7 +527,10 @@ fn bound_field(adj: &gtk::Adjustment, integer: bool, is_min: bool) -> (gtk::Entr
     let entry = gtk::Entry::new();
     entry.set_width_chars(6);
     gtk::prelude::EditableExt::set_alignment(&entry, if is_min { 0.0 } else { 1.0 });
-    entry.set_text(&fmt_slider(if is_min { adj.lower() } else { adj.upper() }, integer));
+    entry.set_text(&fmt_slider(
+        if is_min { adj.lower() } else { adj.upper() },
+        integer,
+    ));
     let focused = Rc::new(Cell::new(false));
 
     let commit: Rc<dyn Fn()> = {
@@ -668,8 +670,12 @@ fn draw_capture(
     cr.rectangle(ax, ay, aw, ah);
     let _ = cr.stroke();
 
-    let (mut x0, mut x1, mut y0, mut y1) =
-        (f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY);
+    let (mut x0, mut x1, mut y0, mut y1) = (
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+    );
     for &(x, y) in points {
         if x.is_finite() && y.is_finite() {
             x0 = x0.min(x);
@@ -689,7 +695,11 @@ fn draw_capture(
         x0 -= 0.5;
         x1 += 0.5;
     }
-    let ypad = if (y1 - y0).abs() < 1e-12 { 1.0 } else { (y1 - y0) * 0.08 };
+    let ypad = if (y1 - y0).abs() < 1e-12 {
+        1.0
+    } else {
+        (y1 - y0) * 0.08
+    };
     y0 -= ypad;
     y1 += ypad;
 

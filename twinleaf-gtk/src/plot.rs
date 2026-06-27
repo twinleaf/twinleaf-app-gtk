@@ -118,7 +118,11 @@ impl PlotCanvas {
 
     /// The latest frame's view-end time (right edge), for pan gesture math.
     pub fn view_end(&self) -> Option<f64> {
-        self.state.borrow().frame.as_ref().and_then(|f| f.viewport_end)
+        self.state
+            .borrow()
+            .frame
+            .as_ref()
+            .and_then(|f| f.viewport_end)
     }
 
     /// Forget the live time origin so the next frame re-seeds it. Called on a
@@ -144,7 +148,11 @@ fn theme(area: &DrawingArea) -> Theme {
     let lum = 0.299 * fg.0 + 0.587 * fg.1 + 0.114 * fg.2;
     // Light foreground text => dark theme, and vice versa.
     let dark = lum > 0.5;
-    let bg = if dark { (0.11, 0.12, 0.14) } else { (0.99, 0.99, 0.99) };
+    let bg = if dark {
+        (0.11, 0.12, 0.14)
+    } else {
+        (0.99, 0.99, 0.99)
+    };
     Theme { fg, bg }
 }
 
@@ -176,7 +184,13 @@ pub(crate) fn text_w(layout: &pango::Layout, s: &str) -> f64 {
 
 /// Draw `s` with its baseline at (x, baseline_y) — matching Cairo's `show_text`
 /// placement — but rendered through Pango so the system font resolves.
-pub(crate) fn draw_text(cr: &cairo::Context, layout: &pango::Layout, x: f64, baseline_y: f64, s: &str) {
+pub(crate) fn draw_text(
+    cr: &cairo::Context,
+    layout: &pango::Layout,
+    x: f64,
+    baseline_y: f64,
+    s: &str,
+) {
     layout.set_text(s);
     let baseline = layout.baseline() as f64 / pango::SCALE as f64;
     cr.move_to(x, baseline_y - baseline);
@@ -197,7 +211,11 @@ fn draw(area: &DrawingArea, cr: &cairo::Context, width: i32, height: i32, st: &P
     cr.rectangle(0.0, 0.0, w, h);
     let _ = cr.fill();
 
-    let is_fft = st.frame.as_ref().map(|f| f.mode == PlotMode::Fft).unwrap_or(false);
+    let is_fft = st
+        .frame
+        .as_ref()
+        .map(|f| f.mode == PlotMode::Fft)
+        .unwrap_or(false);
     // Timeseries reserves an extra label row under the axis for the centered
     // "Time (s)" title plus the lower-right recording offset.
     let mb = if is_fft { 34.0 } else { 48.0 };
@@ -212,7 +230,14 @@ fn draw(area: &DrawingArea, cr: &cairo::Context, width: i32, height: i32, st: &P
     let _ = cr.stroke();
 
     let Some(frame) = st.frame.clone() else {
-        centered(cr, &layout, &th, w, h, "No data — connect a device and select a channel");
+        centered(
+            cr,
+            &layout,
+            &th,
+            w,
+            h,
+            "No data — connect a device and select a channel",
+        );
         return;
     };
 
@@ -277,7 +302,11 @@ fn draw(area: &DrawingArea, cr: &cairo::Context, width: i32, height: i32, st: &P
         let pad = (ymax - ymin) * 0.06;
         (ymin - pad, ymax + pad)
     };
-    let y_margin = if y_log { 0.5 } else { (ideal_y.1 - ideal_y.0) * 0.12 };
+    let y_margin = if y_log {
+        0.5
+    } else {
+        (ideal_y.1 - ideal_y.0) * 0.12
+    };
     let (ny0, ny1) = apply_hysteresis(st.last_y.get(), ideal_y, (raw_ymin, raw_ymax), y_margin);
     st.last_y.set(Some((ny0, ny1)));
     ymin = ny0;
@@ -292,7 +321,11 @@ fn draw(area: &DrawingArea, cr: &cairo::Context, width: i32, height: i32, st: &P
             let pad = (xmax - xmin) * 0.06;
             (xmin - pad, xmax + pad)
         };
-        let x_margin = if x_log { 0.5 } else { (ideal_x.1 - ideal_x.0) * 0.12 };
+        let x_margin = if x_log {
+            0.5
+        } else {
+            (ideal_x.1 - ideal_x.0) * 0.12
+        };
         let (nx0, nx1) = apply_hysteresis(st.last_x.get(), ideal_x, (raw_xmin, raw_xmax), x_margin);
         st.last_x.set(Some((nx0, nx1)));
         xmin = nx0;
@@ -372,7 +405,11 @@ fn draw(area: &DrawingArea, cr: &cairo::Context, width: i32, height: i32, st: &P
     // Displayed cursor x: relative time for timeseries, absolute frequency for FFT.
     let cursor_data_x = cursor_x.map(|cx| {
         let tx = xmin + (cx - ax) / aw * (xmax - xmin);
-        if x_log { 10f64.powf(tx) } else { tx }
+        if x_log {
+            10f64.powf(tx)
+        } else {
+            tx
+        }
     });
     // Absolute x for sample lookup (points are stored absolute; timeseries x is
     // shifted by `x0`).
@@ -443,7 +480,13 @@ fn draw(area: &DrawingArea, cr: &cairo::Context, width: i32, height: i32, st: &P
     if let Some(data_x) = cursor_data_x {
         let xlabel = if is_fft { "f" } else { "t" };
         cr.set_source_rgba(fr, fg, fb, 0.9);
-        draw_text(cr, &layout, ax + 10.0, ly, &format!("{xlabel} = {} {xunit}", fmt_num(data_x)));
+        draw_text(
+            cr,
+            &layout,
+            ax + 10.0,
+            ly,
+            &format!("{xlabel} = {} {xunit}", fmt_num(data_x)),
+        );
     }
 }
 
@@ -694,7 +737,7 @@ mod tests {
         assert!(unix_datetime_label(0.0).is_none());
         assert!(unix_datetime_label(42.5).is_none());
         assert!(unix_datetime_label(9.9e8).is_none()); // just before ~2001
-        // Implausibly large → no date.
+                                                       // Implausibly large → no date.
         assert!(unix_datetime_label(1.0e12).is_none());
         // A real Unix timestamp (2026) → a formatted local date/time.
         let label = unix_datetime_label(1.782563e9).expect("a date label");
@@ -711,7 +754,10 @@ mod tests {
     #[test]
     fn hysteresis_expands_immediately_but_contracts_only_past_margin() {
         // No memory yet → take the ideal.
-        assert_eq!(apply_hysteresis(None, (0.0, 1.0), (0.0, 1.0), 0.2), (0.0, 1.0));
+        assert_eq!(
+            apply_hysteresis(None, (0.0, 1.0), (0.0, 1.0), 0.2),
+            (0.0, 1.0)
+        );
         // Data grew → expand right away.
         assert_eq!(
             apply_hysteresis(Some((0.0, 1.0)), (0.0, 2.0), (0.0, 2.0), 0.2),

@@ -128,8 +128,10 @@ fn main() {
             CoreEvent::Json(value) => {
                 match value.get("type").and_then(|t| t.as_str()).unwrap_or("") {
                     "deviceList" => {
-                        let devices =
-                            value.get("devices").map(|d| d.to_string()).unwrap_or_default();
+                        let devices = value
+                            .get("devices")
+                            .map(|d| d.to_string())
+                            .unwrap_or_default();
                         println!("deviceList: {devices}");
                         if list_mode {
                             break;
@@ -175,7 +177,10 @@ fn main() {
                             "playback: start={} end={} position={}",
                             value.get("start").and_then(|v| v.as_f64()).unwrap_or(0.0),
                             value.get("end").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                            value.get("position").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                            value
+                                .get("position")
+                                .and_then(|v| v.as_f64())
+                                .unwrap_or(0.0),
                         );
                     }
                     "health" => {

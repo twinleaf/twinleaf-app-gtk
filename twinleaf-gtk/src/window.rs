@@ -591,8 +591,9 @@ pub fn build_main_window(app: &adw::Application) {
         let win = window.clone();
         let style = style.clone();
         let status_area = status_area.clone();
-        settings_btn
-            .connect_clicked(move |_| crate::prefs_ui::show_preferences(&win, &style, &status_area));
+        settings_btn.connect_clicked(move |_| {
+            crate::prefs_ui::show_preferences(&win, &style, &status_area)
+        });
     }
 
     // Open… / Export… live in a hamburger menu (GTK4 cannot drive the native
@@ -709,22 +710,25 @@ pub fn build_main_window(app: &adw::Application) {
     toolbar_view.set_content(Some(&root));
     window.set_content(Some(&toolbar_view));
 
-    install_event_pump(EventCtx {
-        state: state.clone(),
-        sidebar: sidebar.clone(),
-        canvases: canvases.clone(),
-        panes_box: panes_box.clone(),
-        device_popover: device_popover.clone(),
-        log_view: log_view.clone(),
-        status,
-        log_label,
-        health,
-        firmware,
-        scrubber,
-        scrubber_suppress,
-        controls: main_controls.clone(),
-        record_btn: record_btn.clone(),
-    }, rx);
+    install_event_pump(
+        EventCtx {
+            state: state.clone(),
+            sidebar: sidebar.clone(),
+            canvases: canvases.clone(),
+            panes_box: panes_box.clone(),
+            device_popover: device_popover.clone(),
+            log_view: log_view.clone(),
+            status,
+            log_label,
+            health,
+            firmware,
+            scrubber,
+            scrubber_suppress,
+            controls: main_controls.clone(),
+            record_btn: record_btn.clone(),
+        },
+        rx,
+    );
 
     // Persist geometry on close, and offer to save an in-progress recording.
     {
@@ -879,7 +883,10 @@ fn handle_event(ctx: &EventCtx, event: CoreEvent) {
         record_btn,
     } = ctx;
     match event {
-        CoreEvent::Status { state: phase, message } => {
+        CoreEvent::Status {
+            state: phase,
+            message,
+        } => {
             status.set_text(&format!("{phase} — {message}"));
             // A fresh connection restarts the live plot clock (mirrors the mac's
             // resetLivePlotTiming), so the "+ N s" offset counts from this session.
@@ -956,10 +963,15 @@ fn handle_event(ctx: &EventCtx, event: CoreEvent) {
                     // the build/draw/trigger paths run headless.
                     if std::env::var_os("TWINLEAF_SELFTEST_CONTROLS").is_some() {
                         for d in &devices {
-                            if let Some(r) = d.rpcs.iter().find(|r| r.is_visible() && r.is_capture())
+                            if let Some(r) =
+                                d.rpcs.iter().find(|r| r.is_visible() && r.is_capture())
                             {
                                 eprintln!("[selftest] add_capture {}", r.name);
-                                controls.add_capture(r, &[(r.route.clone(), r.name.clone())], &r.name);
+                                controls.add_capture(
+                                    r,
+                                    &[(r.route.clone(), r.name.clone())],
+                                    &r.name,
+                                );
                             }
                             if let Some(r) = d.rpcs.iter().find(|r| {
                                 r.is_visible()
@@ -970,7 +982,11 @@ fn handle_event(ctx: &EventCtx, event: CoreEvent) {
                                     && !r.is_bool()
                             }) {
                                 eprintln!("[selftest] add_slider {}", r.name);
-                                controls.add_slider(r, &[(r.route.clone(), r.name.clone())], &r.name);
+                                controls.add_slider(
+                                    r,
+                                    &[(r.route.clone(), r.name.clone())],
+                                    &r.name,
+                                );
                             }
                         }
                         // Drive the capture auto-retrigger loop so it runs headless.
@@ -1005,8 +1021,9 @@ fn handle_event(ctx: &EventCtx, event: CoreEvent) {
                         }
                     }
                     if std::env::var_os("TWINLEAF_SELFTEST_RPC").is_some() {
-                        if let Some(r) =
-                            model::visible_rpcs(&devices).into_iter().find(|r| r.readable)
+                        if let Some(r) = model::visible_rpcs(&devices)
+                            .into_iter()
+                            .find(|r| r.readable)
                         {
                             eprintln!("[selftest] reading RPC {}", r.name);
                             state.call_rpc(r.route, r.name, None);
@@ -1014,7 +1031,12 @@ fn handle_event(ctx: &EventCtx, event: CoreEvent) {
                     }
                     // On a fresh connect or opened file, display a default channel:
                     // the first column of the lowest-id stream that has data.
-                    let no_columns = state.data.borrow().panes.iter().all(|p| p.columns.is_empty());
+                    let no_columns = state
+                        .data
+                        .borrow()
+                        .panes
+                        .iter()
+                        .all(|p| p.columns.is_empty());
                     if no_columns {
                         if let Some(key) = model::default_display_column(&devices) {
                             state.toggle_column(key, true);
@@ -1097,7 +1119,10 @@ fn handle_event(ctx: &EventCtx, event: CoreEvent) {
                 "rpcInvalidated" => {}
                 "exportResult" => {
                     if value.get("ok").and_then(|o| o.as_bool()).unwrap_or(false) {
-                        let out = value.get("outputPath").and_then(|p| p.as_str()).unwrap_or("");
+                        let out = value
+                            .get("outputPath")
+                            .and_then(|p| p.as_str())
+                            .unwrap_or("");
                         status.set_text(&format!("Exported to {out}"));
                     } else {
                         let err = value
@@ -1120,7 +1145,10 @@ fn handle_event(ctx: &EventCtx, event: CoreEvent) {
                 "playback" => {
                     let start = value.get("start").and_then(|v| v.as_f64()).unwrap_or(0.0);
                     let end = value.get("end").and_then(|v| v.as_f64()).unwrap_or(1.0);
-                    let position = value.get("position").and_then(|v| v.as_f64()).unwrap_or(start);
+                    let position = value
+                        .get("position")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(start);
                     scrubber_suppress.set(true);
                     if end > start {
                         scrubber.set_range(start, end);

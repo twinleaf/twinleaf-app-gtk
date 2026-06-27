@@ -3,8 +3,43 @@
 Cross-platform distribution for `twinleaf-gtk`. App id: `com.twinleaf.AppGtk`.
 
 These are working starting points; treat the Flatpak/macOS manifests as
-templates to validate on a real builder. CI (`.gitlab-ci.yml`) builds + tests on
-Linux on every push.
+templates to validate on a real builder.
+
+## CI / releases (GitHub Actions)
+
+- **`.github/workflows/ci.yml`** — build + test on every push/PR (ubuntu-24.04;
+  GTK 4.14 satisfies the crate's `v4_10`/`v1_4` features). Mirrors
+  `.gitlab-ci.yml`, which still runs on code.twinleaf.com.
+- **`.github/workflows/release.yml`** — on a `v*` tag (or manual dispatch with a
+  tag input) builds and attaches to one GitHub Release:
+  - **Linux**: `com.twinleaf.AppGtk.flatpak` (Flatpak single-file bundle, GNOME 47 runtime).
+  - **Windows**: `twinleaf-gtk-windows-x86_64.zip` (portable; MSYS2/UCRT64 build + `bundle-windows.sh`).
+  - **macOS**: `twinleaf-gtk-macos-{arm64,x86_64}.zip` (self-contained `Twinleaf.app`; signed + notarized when secrets are set).
+
+  ```sh
+  git tag v0.1.0 && git push github.com v0.1.0   # 'github.com' is this repo's GitHub remote
+  ```
+
+### macOS signing secrets (repo → Settings → Secrets → Actions)
+
+The macOS sign/notarize steps run only when `MACOS_SIGN_IDENTITY` is set;
+without the secrets the job still uploads an unsigned `.app` zip (users
+right-click → Open once, or `xattr -dr com.apple.quarantine Twinleaf.app`).
+
+| Secret | What it is |
+| --- | --- |
+| `MACOS_CERTIFICATE_P12` | base64 of your Developer ID Application cert (`base64 -i cert.p12`) |
+| `MACOS_CERTIFICATE_PASSWORD` | password for the `.p12` |
+| `MACOS_SIGN_IDENTITY` | e.g. `Developer ID Application: Twinleaf LLC (TEAMID)` |
+| `MACOS_KEYCHAIN_PASSWORD` | any throwaway string (temp keychain in CI) |
+| `APPLE_ID` | Apple ID email for notarization |
+| `APPLE_TEAM_ID` | 10-char Team ID |
+| `APPLE_APP_PASSWORD` | app-specific password (appleid.apple.com) |
+
+> **Expect 1–2 CI round-trips to go fully green.** The fiddly parts are the
+> Windows DLL/loader collection (`bundle-windows.sh`) and the macOS dylib/loader
+> relinking (`bundle-macos.sh`) — both can't be validated off-runner. The app
+> icon (`linux/com.twinleaf.AppGtk.svg`) and `metainfo.xml` are placeholders.
 
 ## Linux
 

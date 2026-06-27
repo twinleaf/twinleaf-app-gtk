@@ -15,7 +15,7 @@ variables:
 default:
   image: rust:bookworm
   before_script:
-    - apt-get update && apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev build-essential cmake
+    - apt-get update && apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev libudev-dev build-essential cmake
     - git submodule update --init --recursive
   cache:
     key: "$CI_COMMIT_REF_SLUG"

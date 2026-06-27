@@ -14,13 +14,13 @@ use std::thread;
 use std::time::{Duration, Instant};
 use twinleaf::data::{BoundaryReason, DeviceDataParser, DeviceFullMetadata, Sample};
 use twinleaf::device::capture::{read_capture, CaptureReadout, CaptureRpc};
+#[cfg(feature = "serial")]
+use twinleaf::device::discovery::PortInterface;
+#[cfg(any(feature = "serial", feature = "mdns"))]
+use twinleaf::device::discovery::{self};
 use twinleaf::device::{
     DeviceEvent, DeviceTree, RpcDescriptor, RpcMetaFlags, RpcValueType, TreeEvent,
 };
-#[cfg(any(feature = "serial", feature = "mdns"))]
-use twinleaf::device::discovery::{self};
-#[cfg(feature = "serial")]
-use twinleaf::device::discovery::PortInterface;
 #[cfg(feature = "firmware")]
 use twinleaf::firmware::{self, FirmwareCatalog, FlashEvent, StopOutcome, UpdateStatus};
 use twinleaf::tio::proto::meta::MetadataEpoch;
@@ -297,11 +297,7 @@ pub fn run_runtime(command_rx: Receiver<CoreCommand>, emitter: EventSink) {
                     );
                     emit_view_data(&emitter, request_id, Ok(text));
                 } else {
-                    emit_view_data(
-                        &emitter,
-                        request_id,
-                        Err("No active data view".to_string()),
-                    );
+                    emit_view_data(&emitter, request_id, Err("No active data view".to_string()));
                 }
             }
             CoreCommand::SetActiveColumns { columns } => {
@@ -1324,10 +1320,7 @@ impl ColumnState {
     }
 
     fn fft_window_sample_count(&self, window_seconds: f64) -> usize {
-        if !window_seconds.is_finite()
-            || !self.sample_rate.is_finite()
-            || self.sample_rate <= 0.0
-        {
+        if !window_seconds.is_finite() || !self.sample_rate.is_finite() || self.sample_rate <= 0.0 {
             return 0;
         }
 
@@ -2031,7 +2024,11 @@ fn append_mdns_devices(devices: &mut Vec<AvailableDevice>) {
             devices.push(AvailableDevice {
                 label: found.name.clone().unwrap_or_else(|| found.url.clone()),
                 kind: "network".to_string(),
-                detail: format!("{} · {found_url}", scheme.to_uppercase(), found_url = found.url),
+                detail: format!(
+                    "{} · {found_url}",
+                    scheme.to_uppercase(),
+                    found_url = found.url
+                ),
                 url: found.url,
                 routes: Vec::new(),
             });
@@ -2521,12 +2518,20 @@ impl JitterWindow {
     }
 
     fn std_ms(&self) -> f64 {
-        let n = if self.filled { self.buf.len() } else { self.idx };
+        let n = if self.filled {
+            self.buf.len()
+        } else {
+            self.idx
+        };
         if n == 0 {
             return 0.0;
         }
         let mean = self.buf[..n].iter().sum::<f64>() / n as f64;
-        let var = self.buf[..n].iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n as f64;
+        let var = self.buf[..n]
+            .iter()
+            .map(|x| (x - mean).powi(2))
+            .sum::<f64>()
+            / n as f64;
         var.sqrt()
     }
 }
@@ -2799,7 +2804,11 @@ fn run_session(
     // Lazily check for available firmware upgrades on a background thread so
     // neither the network round-trip nor the per-device dev.desc RPC blocks the
     // streaming loop.
-    spawn_upgrade_check(Arc::clone(&proxy), discovery.devices.clone(), emitter.clone());
+    spawn_upgrade_check(
+        Arc::clone(&proxy),
+        discovery.devices.clone(),
+        emitter.clone(),
+    );
     let mut last_plot_emit = Instant::now();
     let mut last_stream_value_emit = Instant::now();
     let mut health = HealthMonitor::default();
@@ -2905,7 +2914,11 @@ fn run_session(
                     emit_view_data(&emitter, request_id, Ok(text));
                 }
                 SessionCommand::CheckUpgrade => {
-                    spawn_upgrade_check(Arc::clone(&proxy), discovery.devices.clone(), emitter.clone());
+                    spawn_upgrade_check(
+                        Arc::clone(&proxy),
+                        discovery.devices.clone(),
+                        emitter.clone(),
+                    );
                 }
                 SessionCommand::PerformUpgrade { route } => {
                     spawn_upgrade_flash(Arc::clone(&proxy), route, emitter.clone());
@@ -3250,7 +3263,11 @@ fn refresh_route_metadata(
 }
 
 #[cfg(not(feature = "firmware"))]
-fn spawn_upgrade_check(_proxy: Arc<proxy::Interface>, _devices: Vec<DeviceDto>, emitter: EventSink) {
+fn spawn_upgrade_check(
+    _proxy: Arc<proxy::Interface>,
+    _devices: Vec<DeviceDto>,
+    emitter: EventSink,
+) {
     emitter.debug("firmware upgrade support not compiled in");
 }
 
@@ -3376,14 +3393,14 @@ fn run_upgrade_flash(
     route: &str,
     progress: &dyn Fn(&str, Value),
 ) -> Result<(), String> {
-    let device_route = DeviceRoute::from_str(route)
-        .map_err(|_| format!("invalid device route: {route}"))?;
+    let device_route =
+        DeviceRoute::from_str(route).map_err(|_| format!("invalid device route: {route}"))?;
     let port = proxy
         .device_rpc(device_route)
         .map_err(|err| format!("could not open device: {err:?}"))?;
 
-    let installed =
-        firmware::query_installed(&port).map_err(|err| format!("could not read firmware: {err}"))?;
+    let installed = firmware::query_installed(&port)
+        .map_err(|err| format!("could not read firmware: {err}"))?;
     let catalog = firmware::github::GithubCatalog::twinleaf();
     let report = firmware::check_for_update(installed, &catalog)
         .map_err(|err| format!("could not check for update: {err}"))?;
@@ -3462,7 +3479,9 @@ fn add_late_discovered_route(
         return false;
     }
 
-    emitter.debug(format!("route {route} appeared mid-session; fetching metadata"));
+    emitter.debug(format!(
+        "route {route} appeared mid-session; fetching metadata"
+    ));
     emitter.status(
         "metadata",
         format!("Discovering new device on route {route}"),
@@ -4026,9 +4045,9 @@ fn fetch_device(
                     emitter,
                     report_errors,
                     format!(
-                        "Twinleaf parser panic while fetching stream metadata for route {route}: {}",
-                        panic_message(err)
-                    ),
+                    "Twinleaf parser panic while fetching stream metadata for route {route}: {}",
+                    panic_message(err)
+                ),
                 );
                 (fallback_device_meta(route), Vec::new(), None)
             }
@@ -5027,7 +5046,9 @@ const MAX_RAW_POINTS_PER_STREAM: usize = 100_000;
 
 fn live_retention_seconds(view: &ViewConfig) -> f64 {
     let window = view.window_seconds.max(1.0);
-    (window * 1.5).max(window + 5.0).clamp(10.0, MAX_RETENTION_SECONDS)
+    (window * 1.5)
+        .max(window + 5.0)
+        .clamp(10.0, MAX_RETENTION_SECONDS)
 }
 
 fn live_retention_seconds_for_panes(plot_panes: &[PlotPaneConfig], fallback: &ViewConfig) -> f64 {
@@ -6073,7 +6094,17 @@ fn dispatch_rpc(
         let error_emitter = emitter.clone();
         if let Err(err) = thread::Builder::new()
             .name("twinleaf-capture-rpc".into())
-            .spawn(move || execute_rpc(&proxy, rpc_meta, request_id, route, name, arg, &worker_emitter))
+            .spawn(move || {
+                execute_rpc(
+                    &proxy,
+                    rpc_meta,
+                    request_id,
+                    route,
+                    name,
+                    arg,
+                    &worker_emitter,
+                )
+            })
         {
             error_emitter.emit(&json!({
                 "type": "rpcResult",
@@ -6453,7 +6484,10 @@ mod tests {
         );
         // At/after the reference: starts at the first *real* sample (1000), not
         // the reference (990) and not the pre-sync 0.
-        assert_eq!(data_range_since(&states, Some(990.0)), Some((1000.0, 1002.0)));
+        assert_eq!(
+            data_range_since(&states, Some(990.0)),
+            Some((1000.0, 1002.0))
+        );
         // No reference → full range, pre-sync included.
         assert_eq!(data_range_since(&states, None), Some((0.0, 1002.0)));
         // Empty column states → no range.
@@ -6634,7 +6668,8 @@ mod tests {
 
         // Anchored to the first pane column (stream A).
         let pane = vec![key_a.clone(), key_b.clone()];
-        let (view_end, series, _) = build_live_timeseries_series(0, &states, &pane, &view, None, None);
+        let (view_end, series, _) =
+            build_live_timeseries_series(0, &states, &pane, &view, None, None);
         assert_eq!(view_end, Some(1019.0));
         assert_eq!(series.len(), 2);
         assert!(!series[0].outside_window);
@@ -6644,7 +6679,8 @@ mod tests {
 
         // Swapping the pane order anchors to stream B instead.
         let pane = vec![key_b.clone(), key_a.clone()];
-        let (view_end, series, _) = build_live_timeseries_series(0, &states, &pane, &view, None, None);
+        let (view_end, series, _) =
+            build_live_timeseries_series(0, &states, &pane, &view, None, None);
         assert_eq!(view_end, Some(24.0));
         assert!(!series[0].outside_window);
         assert!(series[0].points.len() > 0);
@@ -6688,7 +6724,8 @@ mod tests {
         let view = ViewConfig::default();
 
         let pane = vec![key_a.clone(), key_b.clone()];
-        let (view_end, series, _) = build_live_timeseries_series(0, &states, &pane, &view, None, None);
+        let (view_end, series, _) =
+            build_live_timeseries_series(0, &states, &pane, &view, None, None);
         assert_eq!(view_end, Some(1019.0));
         assert_eq!(series.len(), 2);
         assert!(!series[0].outside_window);
@@ -6832,8 +6869,14 @@ mod tests {
         assert_eq!(request.window_seconds, 20.0);
         assert_eq!(request.inputs.len(), 1);
         assert_eq!(request.inputs[0].points.len(), 20);
-        assert_eq!(request.inputs[0].points.first().map(|point| point.x), Some(41.0));
-        assert_eq!(request.inputs[0].points.last().map(|point| point.x), Some(60.0));
+        assert_eq!(
+            request.inputs[0].points.first().map(|point| point.x),
+            Some(41.0)
+        );
+        assert_eq!(
+            request.inputs[0].points.last().map(|point| point.x),
+            Some(60.0)
+        );
 
         let live_request = build_fft_request(8, &column_states, &active_columns, &view, None);
         assert_eq!(live_request.window_seconds, 20.0);
@@ -6969,7 +7012,10 @@ mod tests {
         // Column selected: raw and FPCS ring fill together for x = 0..5.
         let mut state = ColumnState::new("signal".to_string(), "V".to_string(), 1.0);
         for index in 0..5 {
-            let point = Point { x: index as f64, y: index as f64 };
+            let point = Point {
+                x: index as f64,
+                y: index as f64,
+            };
             state.push_raw(point, retention);
             state.process_fpcs_point(0, &view, point);
         }
@@ -6991,7 +7037,10 @@ mod tests {
         // The raw buffer keeps filling while unselected (process_sample pushes
         // every column), trimming the original x = 0..5 out of retention.
         for index in 5..60 {
-            let point = Point { x: index as f64, y: index as f64 };
+            let point = Point {
+                x: index as f64,
+                y: index as f64,
+            };
             column_states
                 .get_mut(&key)
                 .unwrap()

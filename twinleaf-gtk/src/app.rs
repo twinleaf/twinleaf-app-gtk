@@ -181,8 +181,9 @@ impl AppState {
 
     /// Ask the core to (re)enumerate available devices.
     pub fn refresh_devices(&self) {
-        self.core
-            .send(CoreCommand::ListDevices { include_all: Some(false) });
+        self.core.send(CoreCommand::ListDevices {
+            include_all: Some(false),
+        });
     }
 
     /// Start or stop logging the live session to a `.tio` file in the temp
@@ -207,7 +208,8 @@ impl AppState {
                 data.recording_path = to_temp.then(|| path.clone());
             }
         }
-        self.core.send(CoreCommand::SetLogging { enabled, log_path });
+        self.core
+            .send(CoreCommand::SetLogging { enabled, log_path });
     }
 
     /// Set the log file destination ("Save As…"). If recording is in progress,
@@ -287,7 +289,11 @@ impl AppState {
             return None;
         }
         // New graphs inherit the most recent graph's settings.
-        let view = data.panes.last().map(|p| p.view.clone()).unwrap_or_default();
+        let view = data
+            .panes
+            .last()
+            .map(|p| p.view.clone())
+            .unwrap_or_default();
         data.panes.push(PaneState {
             columns: Vec::new(),
             view,
@@ -372,7 +378,8 @@ impl AppState {
                 }
             }
         }
-        self.core.send(CoreCommand::SetActiveColumns { columns: active });
+        self.core
+            .send(CoreCommand::SetActiveColumns { columns: active });
         let configs = panes
             .into_iter()
             .enumerate()

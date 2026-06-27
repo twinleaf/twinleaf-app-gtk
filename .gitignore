@@ -4,3 +4,7 @@
 .DS_Store
 # Local-only: machine-specific Homebrew pkg-config paths for the gtk4 build.
 /.cargo/
+# Signing material — never commit private keys or extracted secrets.
+/secrets-out/
+*.p12
+*.p12.b64

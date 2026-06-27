@@ -32,6 +32,10 @@ modules:
       - install -Dm755 target/release/twinleaf-gtk /app/bin/twinleaf-gtk
       - install -Dm644 packaging/linux/com.twinleaf.AppGtk.desktop
         /app/share/applications/com.twinleaf.AppGtk.desktop
+      - install -Dm644 packaging/linux/com.twinleaf.AppGtk.svg
+        /app/share/icons/hicolor/scalable/apps/com.twinleaf.AppGtk.svg
+      - install -Dm644 packaging/linux/com.twinleaf.AppGtk.metainfo.xml
+        /app/share/metainfo/com.twinleaf.AppGtk.metainfo.xml
     sources:
       - type: dir
         path: ../..

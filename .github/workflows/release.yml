@@ -1,0 +1,240 @@
+name: Release
+
+# Produces GitHub Release artifacts for all three platforms on a `v*` tag
+# (or manual dispatch with an explicit tag). Platform jobs build workflow
+# artifacts, then one publish job creates/updates the Release keyed by the tag.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# macOS signing/notarization is wired but optional: the sign/notarize steps
+# only run when the signing secrets are present (see packaging/README.md).
+# Without them the macOS job still uploads an unsigned .app zip.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to create/update (e.g. v0.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  # ---------------------------------------------------------------- Linux
+  linux-flatpak:
+    runs-on: ubuntu-latest
+    container:
+      image: bilelmoussaoui/flatpak-github-actions:gnome-47
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Build Flatpak bundle
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: com.twinleaf.AppGtk.flatpak
+          manifest-path: packaging/flatpak/com.twinleaf.AppGtk.yaml
+          cache-key: flatpak-builder-${{ github.sha }}
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: twinleaf-gtk-linux-flatpak
+          path: com.twinleaf.AppGtk.flatpak
+          if-no-files-found: error
+
+  # -------------------------------------------------------------- Windows
+  windows:
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Set up MSYS2 (UCRT64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git zip
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-rust
+            mingw-w64-ucrt-x86_64-gtk4
+            mingw-w64-ucrt-x86_64-libadwaita
+            mingw-w64-ucrt-x86_64-librsvg
+            mingw-w64-ucrt-x86_64-adwaita-icon-theme
+
+      - name: Build
+        run: cargo build --release --locked -p twinleaf-gtk
+
+      - name: Bundle GTK runtime
+        run: packaging/windows/bundle-windows.sh
+
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path dist/twinleaf-gtk/* -DestinationPath twinleaf-gtk-windows-x86_64.zip
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: twinleaf-gtk-windows-x86_64
+          path: twinleaf-gtk-windows-x86_64.zip
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------- macOS
+  macos:
+    timeout-minutes: 45   # fail fast instead of hanging if dylibbundler ever prompts
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14   # Apple Silicon (arm64 only; Intel build dropped)
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    env:
+      SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install GTK4 + libadwaita
+        run: brew install gtk4 libadwaita dylibbundler
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build + bundle Twinleaf.app
+        run: packaging/macos/bundle-macos.sh
+
+      - name: Import signing certificate
+        if: env.SIGN_IDENTITY != ''
+        env:
+          P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          P12_PW: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KC_PW: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/app-signing.keychain-db"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KC_PW" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KC_PW" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -P "$P12_PW" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN" login.keychain-db
+          security default-keychain -s "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PW" "$KEYCHAIN"
+          rm -f "$RUNNER_TEMP/cert.p12"
+          # Ensure Apple's Developer ID intermediate is present so the leaf cert
+          # chains to a trusted root (otherwise `find-identity -v` reports 0
+          # valid even when the identity is in the keychain).
+          curl -fsSL -o "$RUNNER_TEMP/DevIDG2.cer" \
+            https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer \
+            && security import "$RUNNER_TEMP/DevIDG2.cer" -k "$KEYCHAIN" 2>/dev/null || true
+          echo "Identities in the signing keychain:"
+          security find-identity -p codesigning "$KEYCHAIN" || true
+          # Match the identity by SHA-1 (immune to a wrong MACOS_SIGN_IDENTITY
+          # name). Prefer a fully-valid one; fall back to any present identity.
+          HASH="$(security find-identity -v -p codesigning "$KEYCHAIN" | awk '/Developer ID Application/{print $2; exit}')"
+          [ -n "$HASH" ] || HASH="$(security find-identity -p codesigning "$KEYCHAIN" | awk '/Developer ID Application/{print $2; exit}')"
+          if [ -z "$HASH" ]; then
+            echo "::error::No Developer ID Application identity in the keychain. MACOS_CERTIFICATE_P12 must contain BOTH the certificate and its private key. In Keychain Access, open 'My Certificates', right-click the 'Developer ID Application' row (key nested underneath) → Export → .p12, then re-run github-macos-secrets.sh."
+            exit 1
+          fi
+          echo "SIGN_ID=$HASH" >> "$GITHUB_ENV"
+
+      - name: Codesign (hardened runtime)
+        if: env.SIGN_IDENTITY != ''
+        run: |
+          APP=build/Twinleaf.app
+          find "$APP/Contents/Resources/lib" -type f \( -name '*.dylib' -o -name '*.so' \) \
+            -exec codesign --force --options runtime --timestamp -s "$SIGN_ID" {} +
+          codesign --force --options runtime --timestamp \
+            --entitlements packaging/macos/entitlements.plist \
+            -s "$SIGN_ID" "$APP/Contents/MacOS/twinleaf-gtk-bin"
+          codesign --force --options runtime --timestamp -s "$SIGN_ID" "$APP/Contents/MacOS/twinleaf-gtk"
+          codesign --force --options runtime --timestamp \
+            --entitlements packaging/macos/entitlements.plist \
+            -s "$SIGN_ID" "$APP"
+          codesign --verify --strict --verbose=2 "$APP"
+
+      - name: Zip .app
+        run: ditto -c -k --keepParent build/Twinleaf.app "twinleaf-gtk-macos-${{ matrix.arch }}.zip"
+
+      - name: Notarize + staple
+        if: env.SIGN_IDENTITY != ''
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          xcrun notarytool submit "twinleaf-gtk-macos-${{ matrix.arch }}.zip" \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple build/Twinleaf.app
+          rm -f "twinleaf-gtk-macos-${{ matrix.arch }}.zip"
+          ditto -c -k --keepParent build/Twinleaf.app "twinleaf-gtk-macos-${{ matrix.arch }}.zip"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: twinleaf-gtk-macos-${{ matrix.arch }}
+          path: twinleaf-gtk-macos-${{ matrix.arch }}.zip
+          if-no-files-found: error
+
+  # -------------------------------------------------------------- Publish
+  publish-release:
+    needs: [linux-flatpak, windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download workflow artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: release-assets
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=false
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            prerelease=true
+          fi
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --title "$RELEASE_TAG" \
+              --draft=false \
+              --prerelease="$prerelease" \
+              --verify-tag
+          else
+            gh release create "$RELEASE_TAG" \
+              --title "$RELEASE_TAG" \
+              --generate-notes \
+              --prerelease="$prerelease" \
+              --verify-tag
+          fi
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mapfile -t assets < <(find release-assets -type f | sort)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "::error::No release assets were downloaded."
+            exit 1
+          fi
+
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber

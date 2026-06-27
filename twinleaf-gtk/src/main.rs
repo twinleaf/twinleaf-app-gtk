@@ -59,7 +59,11 @@ fn main() -> glib::ExitCode {
         // Command — so platform-native Cmd shortcuts need the `<Meta>` modifier
         // explicitly. Pick the right one per-OS. (The `win.*` actions are defined
         // per main window; see window.rs.)
-        let primary = if cfg!(target_os = "macos") { "<Meta>" } else { "<Primary>" };
+        let primary = if cfg!(target_os = "macos") {
+            "<Meta>"
+        } else {
+            "<Primary>"
+        };
         app.set_accels_for_action("app.quit", &[&format!("{primary}q")]);
         app.set_accels_for_action("app.close-window", &[&format!("{primary}w")]);
         app.set_accels_for_action("win.open", &[&format!("{primary}o")]);

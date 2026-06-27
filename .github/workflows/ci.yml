@@ -1,0 +1,51 @@
+name: CI
+
+# Build + test on every push/PR, mirroring .gitlab-ci.yml. Runs on
+# ubuntu-24.04 because it ships GTK 4.14 / libadwaita 1.5, which satisfy the
+# crate's `v4_10` / `v1_4` features (Debian bookworm only has GTK 4.8).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install GTK4 + libadwaita + libudev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-dev libadwaita-1-dev libudev-dev build-essential cmake
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+        continue-on-error: true
+
+      - name: Test core
+        run: cargo test -p twinleaf-core --locked
+
+      - name: Build workspace
+        run: cargo build --workspace --locked --release
