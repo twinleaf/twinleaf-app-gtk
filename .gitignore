@@ -1,0 +1,6 @@
+/target
+**/target
+**/*.rs.bk
+.DS_Store
+# Local-only: machine-specific Homebrew pkg-config paths for the gtk4 build.
+/.cargo/

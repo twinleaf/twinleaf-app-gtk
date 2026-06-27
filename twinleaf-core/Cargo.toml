@@ -1,0 +1,29 @@
+[package]
+name = "twinleaf-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "UI-agnostic runtime for the Twinleaf app: device I/O, decimation, FFT, logging, export."
+
+# Feature flags mirror the SwiftUI app's `tio-bridge` so behavior matches.
+[features]
+default = ["serial", "firmware", "mdns"]
+serial = ["twinleaf/serial"]
+# HDF5 export. Off by default: statically compiles libhdf5 (needs `cmake`),
+# which complicates cross-platform builds (Windows especially).
+hdf5 = ["twinleaf/hdf5"]
+# Firmware availability check + flashing via the GitHub firmware catalog.
+firmware = ["twinleaf/firmware-update"]
+# mDNS/DNS-SD discovery of networked devices advertising `_twinleaf._tcp`.
+mdns = ["twinleaf/mdns"]
+
+[dependencies]
+crossbeam = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Worker-thread -> GTK-main-loop event channel. The core sends with
+# `send_blocking`; the UI awaits the receiver on the main context.
+async-channel = "2"
+twinleaf = { version = "1.9", path = "../vendor/twinleaf-rust/twinleaf", default-features = false }
+welch-sde = "0.1"

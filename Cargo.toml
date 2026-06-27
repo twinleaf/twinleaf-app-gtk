@@ -1,0 +1,16 @@
+# Workspace for the cross-platform GTK4 (gtk-rs) Twinleaf app.
+#
+# - `twinleaf-core`: UI-agnostic runtime ported from the SwiftUI app's
+#   `tio-bridge` Rust core (device I/O, FPCS decimation, FFT, logging,
+#   export, playback, firmware). Emits a typed `CoreEvent` over a channel
+#   instead of the old C-FFI binary callback.
+# - `twinleaf-gtk`: the GTK4 user interface built on `twinleaf-core`.
+[workspace]
+resolver = "2"
+members = ["twinleaf-core", "twinleaf-gtk"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://code.twinleaf.com/twinleaf/twinleaf-app-gtk"

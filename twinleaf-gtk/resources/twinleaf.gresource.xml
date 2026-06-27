@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/com/twinleaf/AppGtk">
+    <file>icons/scalable/actions/tl-add-symbolic.svg</file>
+    <file>icons/scalable/actions/tl-pause-symbolic.svg</file>
+    <file>icons/scalable/actions/tl-record-symbolic.svg</file>
+    <file>icons/scalable/actions/tl-connect-symbolic.svg</file>
+    <file>icons/scalable/actions/tl-settings-symbolic.svg</file>
+    <file>icons/scalable/actions/tl-log-symbolic.svg</file>
+    <file>icons/scalable/actions/tl-menu-symbolic.svg</file>
+    <file>icons/scalable/actions/tl-update-symbolic.svg</file>
+    <file>icons/scalable/actions/tl-health-symbolic.svg</file>
+    <file>icons/scalable/actions/tl-sidebar-symbolic.svg</file>
+    <file>icons/scalable/actions/tl-unify-symbolic.svg</file>
+  </gresource>
+</gresources>

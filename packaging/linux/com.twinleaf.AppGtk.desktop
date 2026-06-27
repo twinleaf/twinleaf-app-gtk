@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Twinleaf
+GenericName=Sensor Plotter
+Comment=Discover, plot, log, and configure Twinleaf quantum sensors
+Exec=twinleaf-gtk
+Icon=com.twinleaf.AppGtk
+Terminal=false
+Categories=Science;Utility;DataVisualization;
+Keywords=twinleaf;sensor;magnetometer;plot;tio;
+StartupNotify=true

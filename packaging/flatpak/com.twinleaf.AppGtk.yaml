@@ -1,0 +1,37 @@
+# Flatpak manifest for twinleaf-gtk. Build/install:
+#   flatpak-builder --user --install --force-clean build-dir \
+#     packaging/flatpak/com.twinleaf.AppGtk.yaml
+#
+# For a reproducible OFFLINE build, generate cargo-sources.json with
+# flatpak-cargo-generator (flatpak-builder-tools) from Cargo.lock, add it to the
+# `sources:` list, and remove the `build-args: --share=network` below.
+id: com.twinleaf.AppGtk
+runtime: org.gnome.Platform
+runtime-version: '47'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: twinleaf-gtk
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --share=network          # mDNS discovery, TCP devices, firmware catalog
+  - --device=all             # USB / serial device access
+modules:
+  - name: twinleaf-gtk
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/twinleaf-gtk/cargo
+      build-args:
+        - --share=network    # remove once cargo-sources.json is provided
+    build-commands:
+      - cargo build --release --locked -p twinleaf-gtk
+      - install -Dm755 target/release/twinleaf-gtk /app/bin/twinleaf-gtk
+      - install -Dm644 packaging/linux/com.twinleaf.AppGtk.desktop
+        /app/share/applications/com.twinleaf.AppGtk.desktop
+    sources:
+      - type: dir
+        path: ../..

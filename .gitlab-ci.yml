@@ -1,0 +1,46 @@
+# CI for twinleaf-app-gtk (code.twinleaf.com / GitLab).
+#
+# Linux is the primary CI target (gtk4 dev packages are on the default
+# pkg-config path, so no keg-only workaround is needed). Windows/macOS builds
+# are documented in packaging/README.md and can be added as runners later.
+
+stages:
+  - check
+  - build
+
+variables:
+  CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
+  CARGO_TERM_COLOR: "always"
+
+default:
+  image: rust:bookworm
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev build-essential cmake
+    - git submodule update --init --recursive
+  cache:
+    key: "$CI_COMMIT_REF_SLUG"
+    paths:
+      - .cargo/
+      - target/
+
+fmt-and-clippy:
+  stage: check
+  script:
+    - rustup component add rustfmt clippy
+    - cargo fmt --all -- --check
+    - cargo clippy --workspace --all-targets -- -D warnings
+  allow_failure: true
+
+test-core:
+  stage: check
+  script:
+    - cargo test -p twinleaf-core --locked
+
+build-linux:
+  stage: build
+  script:
+    - cargo build --workspace --locked --release
+  artifacts:
+    paths:
+      - target/release/twinleaf-gtk
+    expire_in: 1 week
