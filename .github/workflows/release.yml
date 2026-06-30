@@ -215,18 +215,29 @@ jobs:
             prerelease=true
           fi
 
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_TAG" \
-              --title "$RELEASE_TAG" \
-              --draft=false \
-              --prerelease="$prerelease" \
-              --verify-tag
+          create_args=(
+            "$RELEASE_TAG"
+            --title "$RELEASE_TAG"
+            --generate-notes
+            --prerelease="$prerelease"
+          )
+          edit_args=(
+            "$RELEASE_TAG"
+            --title "$RELEASE_TAG"
+            --draft=false
+            --prerelease="$prerelease"
+          )
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            create_args+=(--target "$GITHUB_SHA")
           else
-            gh release create "$RELEASE_TAG" \
-              --title "$RELEASE_TAG" \
-              --generate-notes \
-              --prerelease="$prerelease" \
-              --verify-tag
+            create_args+=(--verify-tag)
+            edit_args+=(--verify-tag)
+          fi
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "${edit_args[@]}"
+          else
+            gh release create "${create_args[@]}"
           fi
 
       - name: Upload release assets
