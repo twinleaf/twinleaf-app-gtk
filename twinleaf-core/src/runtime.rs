@@ -5926,13 +5926,62 @@ fn fft_points(points: &[Point], sample_rate: f64, detrend: DetrendMethod) -> Vec
 
     let welch: SpectralDensity<f64> = SpectralDensity::builder(&y, sample_rate).build();
     let psd = welch.periodogram();
-    let frequencies = psd.frequency().to_vec();
-    let asd: Vec<f64> = psd.to_vec().iter().map(|power| power.sqrt()).collect();
+    let frequencies = bin_frequencies(psd.len(), welch.dft_size, sample_rate);
+    let asd: Vec<f64> = one_sided_amplitude_density(&psd);
 
     frequencies
         .into_iter()
         .zip(asd)
         .map(|(x, y)| Point { x, y })
+        .collect()
+}
+
+
+/// Centre frequencies of the bins `welch-sde` returns.
+///
+/// Its own `frequency()` spreads the `n` bins evenly over `0..=fs/2` as
+/// `i * fs / (2 * (n - 1))`, which puts the last bin exactly at Nyquist. But
+/// those bins are the first `n = dft_size / 2` DFT bins, spaced `fs / dft_size`
+/// apart, so the last one sits one spacing *below* Nyquist. The crate's mapping
+/// therefore stretches the whole axis by `n / (n - 1)` — about 0.05% for a
+/// 4096-point transform, and proportionally worse for the short transforms a
+/// brief window produces.
+fn bin_frequencies(bin_count: usize, dft_size: usize, sample_rate: f64) -> Vec<f64> {
+    if dft_size == 0 {
+        return Vec::new();
+    }
+    let spacing = sample_rate / dft_size as f64;
+    (0..bin_count).map(|index| index as f64 * spacing).collect()
+}
+
+/// Convert `welch-sde`'s spectral density to a one-sided amplitude density.
+///
+/// The crate windows a real signal into the real part of a complex buffer and
+/// transforms it, so the resulting spectrum is Hermitian: `X[N-k]` is the
+/// conjugate of `X[k]` and the two have identical magnitude. The negative
+/// frequencies are a mirror of the positive ones, not independent data — the
+/// in-phase and quadrature parts of each bin are already combined by
+/// `norm_sqr()`. The crate keeps the first `dft_size / 2` bins and scales them
+/// by `1 / (sum(w^2) * n_segment * fs)`, omitting the factor of two that folds
+/// the mirror back on. What it returns is therefore a *two-sided* density:
+/// integrating it over the frequencies it reports comes to half the signal
+/// variance.
+///
+/// A figure quoted in `units/sqrt(Hz)` is conventionally one-sided, so every
+/// bin that has a mirror partner carries twice the power. Only DC is exempt:
+/// the Nyquist bin would be too, but `dft_size / 2` bins spans indices
+/// `0..dft_size/2 - 1`, so Nyquist (index `dft_size / 2`) is never among them
+/// and the last kept bin is an ordinary mirrored one.
+fn one_sided_amplitude_density(psd: &[f64]) -> Vec<f64> {
+    psd.iter()
+        .enumerate()
+        .map(|(index, power)| {
+            if index == 0 {
+                power.sqrt()
+            } else {
+                (2.0 * power).sqrt()
+            }
+        })
         .collect()
 }
 
@@ -6464,6 +6513,144 @@ fn json_to_bytes(arg: Option<Value>, rpc_type: &str) -> Result<Vec<u8>, String> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Box-Muller over a xorshift stream: repeatable normal noise for tests
+    /// without pulling in an RNG dependency.
+    fn gaussian_noise(seed: u64) -> impl FnMut() -> f64 {
+        let mut state = seed;
+        move || {
+            let mut next = || {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                (state >> 11) as f64 / (1u64 << 53) as f64
+            };
+            let u1: f64 = next().max(1e-12);
+            let u2: f64 = next();
+            (-2.0 * u1.ln()).sqrt() * (std::f64::consts::TAU * u2).cos()
+        }
+    }
+
+    #[test]
+    fn spectrum_axis_is_spaced_by_fs_over_dft_size() {
+        // Bins are spaced `fs / dft_size` and the last sits one spacing below
+        // Nyquist. `welch-sde`'s own `frequency()` instead spreads them to land
+        // exactly on Nyquist, stretching every frequency by `n / (n - 1)`.
+        let sample_rate: f64 = 1000.0;
+        let points: Vec<Point> = (0..16_384)
+            .map(|index| {
+                let t = index as f64 / sample_rate;
+                Point {
+                    x: t,
+                    y: (std::f64::consts::TAU * 400.0 * t).sin(),
+                }
+            })
+            .collect();
+
+        let spectrum = fft_points(&points, sample_rate, DetrendMethod::None);
+        let dft_size = 2 * spectrum.len();
+        let expected_spacing = sample_rate / dft_size as f64;
+
+        let spacing = spectrum[1].x - spectrum[0].x;
+        assert!(
+            (spacing - expected_spacing).abs() < 1e-9,
+            "bin spacing {spacing}, expected {expected_spacing}"
+        );
+        assert_eq!(spectrum[0].x, 0.0, "first bin is DC");
+
+        let last = spectrum[spectrum.len() - 1].x;
+        let expected_last = sample_rate / 2.0 - expected_spacing;
+        assert!(
+            (last - expected_last).abs() < 1e-9,
+            "last bin {last}, expected {expected_last} (one spacing below Nyquist)"
+        );
+    }
+
+    #[test]
+    fn every_bin_but_dc_is_folded(){
+        // Only DC is exempt from the mirror fold: `welch-sde` keeps
+        // `dft_size / 2` bins, spanning indices 0..dft_size/2 - 1, so Nyquist
+        // (index dft_size/2) is never among them and the last kept bin is an
+        // ordinary mirrored one.
+        let folded = one_sided_amplitude_density(&[4.0, 4.0, 4.0, 4.0]);
+        assert_eq!(folded[0], 2.0, "DC must not be doubled");
+        for (index, value) in folded.iter().enumerate().skip(1) {
+            assert!(
+                (value - 8.0_f64.sqrt()).abs() < 1e-12,
+                "bin {index} was not folded: {value}"
+            );
+        }
+    }
+
+    #[test]
+    fn fft_points_returns_a_one_sided_spectral_density() {
+        // For white noise the integral of a one-sided PSD over frequency
+        // equals the signal's variance. The underlying Welch implementation
+        // returns the two-sided form, so `fft_points` folds it; without that
+        // every displayed ASD would sit a factor of sqrt(2) below the value a
+        // `units/sqrt(Hz)` figure denotes.
+        let sample_rate: f64 = 1000.0;
+        let mut gauss = gaussian_noise(0x9E3779B97F4A7C15);
+        let points: Vec<Point> = (0..20_000)
+            .map(|index| Point {
+                x: index as f64 / sample_rate,
+                y: 0.5 * gauss(),
+            })
+            .collect();
+
+        let mean = points.iter().map(|point| point.y).sum::<f64>() / points.len() as f64;
+        let variance = points
+            .iter()
+            .map(|point| (point.y - mean).powi(2))
+            .sum::<f64>()
+            / points.len() as f64;
+
+        let spectrum = fft_points(&points, sample_rate, DetrendMethod::None);
+        let df = spectrum[1].x - spectrum[0].x;
+        let integrated: f64 = spectrum.iter().map(|point| point.y * point.y * df).sum();
+
+        let ratio = integrated / variance;
+        assert!(
+            (0.97..1.03).contains(&ratio),
+            "spectral density convention changed: integral/variance = {ratio}"
+        );
+    }
+
+    #[test]
+    fn spectrum_level_matches_injected_white_noise() {
+        // A tone on top of known white noise: the broadband bins must sit at
+        // the injected amplitude density regardless of the peak.
+        let sample_rate: f64 = 1000.0;
+        let target_asd = 0.02_f64;
+        let sigma = target_asd * (sample_rate / 2.0).sqrt();
+        let mut gauss = gaussian_noise(0x2545F4914F6CDD1D);
+
+        let points: Vec<Point> = (0..20_000)
+            .map(|index| {
+                let t = index as f64 / sample_rate;
+                Point {
+                    x: t,
+                    y: (std::f64::consts::TAU * 60.0 * t).sin() + sigma * gauss(),
+                }
+            })
+            .collect();
+
+        let spectrum = fft_points(&points, sample_rate, DetrendMethod::Quadratic);
+        let broadband: Vec<f64> = spectrum
+            .iter()
+            .filter(|point| point.x > 100.0 && point.x < 400.0 && point.y.is_finite())
+            .map(|point| point.y)
+            .collect();
+        let rms = (broadband.iter().map(|asd| asd * asd).sum::<f64>()
+            / broadband.len() as f64)
+            .sqrt();
+
+        let ratio = rms / target_asd;
+        assert!(
+            (0.97..1.03).contains(&ratio),
+            "spectrum level drifted from the injected noise: {ratio}"
+        );
+    }
 
     #[test]
     fn data_range_since_uses_first_real_sample_not_the_reference() {
