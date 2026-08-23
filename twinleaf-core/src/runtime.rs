@@ -78,6 +78,10 @@ pub struct PlotSeriesData {
     /// time window; sent with no points so the legend can still flag it.
     pub outside_window: bool,
     pub points: Vec<Point>,
+    /// Robust white-noise ASD estimate for FFT series, in `units/sqrt(Hz)`.
+    /// `None` outside FFT mode, or when the spectrum is too short or too
+    /// contaminated to support an estimate.
+    pub noise_floor: Option<f64>,
 }
 
 /// Events published by the core runtime to the UI. The hot path (plot frames)
@@ -132,6 +136,7 @@ impl EventSink {
                 key: item.key.clone(),
                 sample_rate: item.sample_rate,
                 outside_window: item.outside_window,
+                noise_floor: item.noise_floor,
                 points: item.points.collect(),
             })
             .collect();
@@ -609,6 +614,8 @@ struct BinaryPlotSeries<'a> {
     /// pane's anchor stream). The series is sent with no points so the legend
     /// can flag it.
     outside_window: bool,
+    /// Robust white-noise ASD estimate for FFT series, in `units/sqrt(Hz)`.
+    noise_floor: Option<f64>,
 }
 
 struct PlotCadenceProfiler {
@@ -1069,6 +1076,8 @@ struct PlotSeries {
     units: String,
     sample_rate: f64,
     points: Vec<Point>,
+    /// Robust white-noise ASD estimate for FFT series, in `units/sqrt(Hz)`.
+    noise_floor: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -5411,6 +5420,7 @@ fn build_live_timeseries_series<'a>(
                 sample_rate: state.sample_rate,
                 points: PlotPointSource::Slice(&[]),
                 outside_window: true,
+                noise_floor: None,
             });
             continue;
         }
@@ -5421,6 +5431,7 @@ fn build_live_timeseries_series<'a>(
             sample_rate: state.sample_rate,
             points,
             outside_window: false,
+            noise_floor: None,
         });
     }
 
@@ -5572,11 +5583,17 @@ fn emit_plot_at(
             continue;
         }
 
+        let noise_floor = match view.mode {
+            PlotMode::Fft => estimate_white_noise_floor(&points),
+            PlotMode::Timeseries => None,
+        };
+
         series.push(PlotSeries {
             key,
             label: label_state.label.clone(),
             units: label_state.units.clone(),
             sample_rate: state.sample_rate,
+            noise_floor,
             points,
         });
     }
@@ -5638,6 +5655,7 @@ fn emit_plot_series_frame(
             sample_rate: item.sample_rate,
             points: PlotPointSource::Slice(&item.points),
             outside_window: false,
+            noise_floor: item.noise_floor,
         })
         .collect();
     if let Err(err) = emitter.emit_plot_frame(pane_id, mode, viewport_end, &binary_series) {
@@ -5855,6 +5873,9 @@ fn calculate_fft_request(request: FftRequest) -> FftResult {
         .into_iter()
         .filter_map(|input| {
             let points = fft_points(&input.points, input.sample_rate, request.detrend);
+            // Estimate before decimating: min/max bucketing preserves the
+            // envelope, not the distribution the estimator reasons about.
+            let noise_floor = estimate_white_noise_floor(&points);
             let points = decimate_min_max_by_x(&points, request.target_points);
             if points.is_empty() {
                 return None;
@@ -5865,6 +5886,7 @@ fn calculate_fft_request(request: FftRequest) -> FftResult {
                 units: input.units,
                 sample_rate: input.sample_rate,
                 points,
+                noise_floor,
             })
         })
         .collect();
@@ -5936,6 +5958,106 @@ fn fft_points(points: &[Point], sample_rate: f64, detrend: DetrendMethod) -> Vec
         .collect()
 }
 
+
+/// Estimate the flat, broadband ASD level while rejecting low-frequency 1/f
+/// content and narrow spectral peaks.
+///
+/// Equal-sized frequency bands make the band medians insensitive to narrow
+/// peaks. The quiet quartile of all but the lowest bands identifies the white
+/// plateau without assuming a fixed corner frequency. Only bands close to
+/// that plateau contribute samples, and a final one-sided MAD clip removes
+/// any peaks that survived their band's median.
+fn estimate_white_noise_floor(points: &[Point]) -> Option<f64> {
+    let log_values: Vec<f64> = points
+        .iter()
+        .filter(|point| point.x.is_finite() && point.x > 0.0 && point.y.is_finite() && point.y > 0.0)
+        .map(|point| point.y.ln())
+        .collect();
+    if log_values.len() < 16 {
+        return None;
+    }
+
+    let band_count = (log_values.len() / 16).clamp(8, 32).min(log_values.len());
+    let band_size = log_values.len().div_ceil(band_count);
+    let bands: Vec<&[f64]> = log_values.chunks(band_size).collect();
+    if bands.len() < 4 {
+        return None;
+    }
+
+    // Never seed the plateau from the lowest 1/8 of the frequency bands.
+    let low_band_count = (bands.len() / 8).max(1);
+    let mut usable_band_medians: Vec<f64> = bands[low_band_count..]
+        .iter()
+        .filter_map(|band| median(band))
+        .collect();
+    if usable_band_medians.len() < 3 {
+        return None;
+    }
+    usable_band_medians.sort_by(f64::total_cmp);
+
+    // A lower-quartile seed is resistant to both 1/f bands and broad peaks,
+    // while remaining representative of a noisy white plateau.
+    let plateau_seed = quantile_sorted(&usable_band_medians, 0.25)?;
+    let lower_half_end = usable_band_medians.len().div_ceil(2);
+    let lower_half = &usable_band_medians[..lower_half_end];
+    let band_mad = median_absolute_deviation(lower_half, plateau_seed).unwrap_or(0.0);
+    let plateau_tolerance = (3.0 * 1.4826 * band_mad).clamp((1.5_f64).ln(), (2.0_f64).ln());
+
+    let mut candidates = Vec::new();
+    for band in &bands[low_band_count..] {
+        let Some(band_median) = median(band) else {
+            continue;
+        };
+        if band_median <= plateau_seed + plateau_tolerance {
+            candidates.extend_from_slice(band);
+        }
+    }
+    if candidates.len() < 8 {
+        return None;
+    }
+
+    // Iterative, upper-only clipping preserves the center of the broadband
+    // distribution while removing spectral lines at any amplitude.
+    for _ in 0..4 {
+        let Some(center) = median(&candidates) else {
+            return None;
+        };
+        let mad = median_absolute_deviation(&candidates, center).unwrap_or(0.0);
+        let upper_limit = center + (3.5 * 1.4826 * mad).max((1.5_f64).ln());
+        let previous_len = candidates.len();
+        candidates.retain(|value| *value <= upper_limit);
+        if candidates.len() == previous_len || candidates.len() < 8 {
+            break;
+        }
+    }
+
+    median(&candidates).map(f64::exp).filter(|value| value.is_finite() && *value > 0.0)
+}
+
+fn median(values: &[f64]) -> Option<f64> {
+    let mut sorted: Vec<f64> = values.iter().copied().filter(|value| value.is_finite()).collect();
+    if sorted.is_empty() {
+        return None;
+    }
+    sorted.sort_by(f64::total_cmp);
+    quantile_sorted(&sorted, 0.5)
+}
+
+fn median_absolute_deviation(values: &[f64], center: f64) -> Option<f64> {
+    let deviations: Vec<f64> = values.iter().map(|value| (value - center).abs()).collect();
+    median(&deviations)
+}
+
+fn quantile_sorted(sorted: &[f64], quantile: f64) -> Option<f64> {
+    if sorted.is_empty() {
+        return None;
+    }
+    let position = quantile.clamp(0.0, 1.0) * (sorted.len() - 1) as f64;
+    let lower = position.floor() as usize;
+    let upper = position.ceil() as usize;
+    let fraction = position - lower as f64;
+    Some(sorted[lower] + (sorted[upper] - sorted[lower]) * fraction)
+}
 
 /// Centre frequencies of the bins `welch-sde` returns.
 ///
@@ -6529,6 +6651,45 @@ mod tests {
             let u2: f64 = next();
             (-2.0 * u1.ln()).sqrt() * (std::f64::consts::TAU * u2).cos()
         }
+    }
+
+    #[test]
+    fn noise_floor_matches_injected_level_and_rejects_a_tone() {
+        // A strong tone on top of known white noise: the estimate must track
+        // the broadband level, not the peak.
+        let sample_rate: f64 = 1000.0;
+        let target_asd = 0.02_f64;
+        let sigma = target_asd * (sample_rate / 2.0).sqrt();
+        let mut gauss = gaussian_noise(0x2545F4914F6CDD1D);
+
+        let points: Vec<Point> = (0..20_000)
+            .map(|index| {
+                let t = index as f64 / sample_rate;
+                Point {
+                    x: t,
+                    y: (std::f64::consts::TAU * 60.0 * t).sin() + sigma * gauss(),
+                }
+            })
+            .collect();
+
+        let spectrum = fft_points(&points, sample_rate, DetrendMethod::Quadratic);
+        let estimate = estimate_white_noise_floor(&spectrum).expect("estimate");
+        let ratio = estimate / target_asd;
+        assert!(
+            (0.95..1.05).contains(&ratio),
+            "noise floor drifted from the injected level: {ratio}"
+        );
+
+        // The tone is an order of magnitude above the floor; the estimate must
+        // not be pulled anywhere near it.
+        let peak = spectrum
+            .iter()
+            .map(|point| point.y)
+            .fold(f64::NEG_INFINITY, f64::max);
+        assert!(
+            estimate < peak / 10.0,
+            "estimate {estimate} was pulled toward the {peak} peak"
+        );
     }
 
     #[test]

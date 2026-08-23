@@ -472,6 +472,11 @@ fn draw(area: &DrawingArea, cr: &cairo::Context, width: i32, height: i32, st: &P
             if let Some(p) = nearest_point(&s.points, search_x) {
                 text = format!("{text}   {}", fmt_num(p.y));
             }
+        } else if let Some(floor) = s.noise_floor {
+            // With no cursor to read, an FFT trace shows its broadband noise
+            // floor instead — the number the plot is usually being consulted
+            // for. Matches the SwiftUI app's legend.
+            text = format!("{text}   {}", noise_floor_text(st, s, floor));
         }
         cr.set_source_rgba(fr, fg, fb, 0.95);
         draw_text(cr, &layout, ax + 25.0, ly, &text);
@@ -487,6 +492,20 @@ fn draw(area: &DrawingArea, cr: &cairo::Context, width: i32, height: i32, st: &P
             ly,
             &format!("{xlabel} = {} {xunit}", fmt_num(data_x)),
         );
+    }
+}
+
+/// Legend text for a trace's white-noise floor, in `units/sqrt(Hz)`.
+fn noise_floor_text(st: &PlotState, s: &PlotSeriesData, floor: f64) -> String {
+    let units = st
+        .labels
+        .get(&s.key)
+        .map(|(_, u)| u.as_str())
+        .unwrap_or("");
+    if units.is_empty() {
+        format!("floor {} ASD", fmt_num(floor))
+    } else {
+        format!("floor {} {units}/\u{221a}Hz", fmt_num(floor))
     }
 }
 
