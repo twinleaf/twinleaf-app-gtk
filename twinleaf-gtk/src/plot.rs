@@ -497,11 +497,7 @@ fn draw(area: &DrawingArea, cr: &cairo::Context, width: i32, height: i32, st: &P
 
 /// Legend text for a trace's white-noise floor, in `units/sqrt(Hz)`.
 fn noise_floor_text(st: &PlotState, s: &PlotSeriesData, floor: f64) -> String {
-    let units = st
-        .labels
-        .get(&s.key)
-        .map(|(_, u)| u.as_str())
-        .unwrap_or("");
+    let units = st.labels.get(&s.key).map(|(_, u)| u.as_str()).unwrap_or("");
     if units.is_empty() {
         format!("floor {} ASD", fmt_num(floor))
     } else {

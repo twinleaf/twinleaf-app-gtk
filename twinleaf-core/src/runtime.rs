@@ -5958,7 +5958,6 @@ fn fft_points(points: &[Point], sample_rate: f64, detrend: DetrendMethod) -> Vec
         .collect()
 }
 
-
 /// Estimate the flat, broadband ASD level while rejecting low-frequency 1/f
 /// content and narrow spectral peaks.
 ///
@@ -5970,7 +5969,9 @@ fn fft_points(points: &[Point], sample_rate: f64, detrend: DetrendMethod) -> Vec
 fn estimate_white_noise_floor(points: &[Point]) -> Option<f64> {
     let log_values: Vec<f64> = points
         .iter()
-        .filter(|point| point.x.is_finite() && point.x > 0.0 && point.y.is_finite() && point.y > 0.0)
+        .filter(|point| {
+            point.x.is_finite() && point.x > 0.0 && point.y.is_finite() && point.y > 0.0
+        })
         .map(|point| point.y.ln())
         .collect();
     if log_values.len() < 16 {
@@ -6031,11 +6032,17 @@ fn estimate_white_noise_floor(points: &[Point]) -> Option<f64> {
         }
     }
 
-    median(&candidates).map(f64::exp).filter(|value| value.is_finite() && *value > 0.0)
+    median(&candidates)
+        .map(f64::exp)
+        .filter(|value| value.is_finite() && *value > 0.0)
 }
 
 fn median(values: &[f64]) -> Option<f64> {
-    let mut sorted: Vec<f64> = values.iter().copied().filter(|value| value.is_finite()).collect();
+    let mut sorted: Vec<f64> = values
+        .iter()
+        .copied()
+        .filter(|value| value.is_finite())
+        .collect();
     if sorted.is_empty() {
         return None;
     }
@@ -6728,7 +6735,7 @@ mod tests {
     }
 
     #[test]
-    fn every_bin_but_dc_is_folded(){
+    fn every_bin_but_dc_is_folded() {
         // Only DC is exempt from the mirror fold: `welch-sde` keeps
         // `dft_size / 2` bins, spanning indices 0..dft_size/2 - 1, so Nyquist
         // (index dft_size/2) is never among them and the last kept bin is an
@@ -6802,9 +6809,8 @@ mod tests {
             .filter(|point| point.x > 100.0 && point.x < 400.0 && point.y.is_finite())
             .map(|point| point.y)
             .collect();
-        let rms = (broadband.iter().map(|asd| asd * asd).sum::<f64>()
-            / broadband.len() as f64)
-            .sqrt();
+        let rms =
+            (broadband.iter().map(|asd| asd * asd).sum::<f64>() / broadband.len() as f64).sqrt();
 
         let ratio = rms / target_asd;
         assert!(
