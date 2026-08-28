@@ -22,6 +22,12 @@
     <category>Science</category>
     <category>Utility</category>
   </categories>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/twinleaf/twinleaf-app-gtk/main/packaging/linux/screenshots/main.png</image>
+      <caption>Live plotting with per-channel sidebar and sensor settings</caption>
+    </screenshot>
+  </screenshots>
   <url type="homepage">https://twinleaf.com</url>
   <url type="bugtracker">https://github.com/twinleaf/twinleaf-app-gtk/issues</url>
   <content_rating type="oars-1.1"/>

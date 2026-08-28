@@ -1,0 +1,81 @@
+name: Flathub
+
+# On each release, prepare and open the update PR against the Flathub manifest
+# repo (flathub/com.twinleaf.AppGtk): regenerate cargo-sources.json from the
+# tagged Cargo.lock, rewrite the manifest's tag/commit pin, push a branch, and
+# open the PR. Flathub's own Buildbot then builds and publishes when that PR
+# merges — nothing is (or can be) pushed to Flathub directly.
+#
+# Prerequisites (see packaging/README.md "Flathub"):
+# - The one-time app submission to flathub/flathub has been accepted, so the
+#   flathub/com.twinleaf.AppGtk repo exists.
+# - A FLATHUB_TOKEN secret: a (fine-grained) GitHub PAT of a Flathub app
+#   maintainer with contents+pull-requests write on flathub/com.twinleaf.AppGtk.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (e.g. v0.1.0)'
+        required: true
+
+env:
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+  FLATHUB_REPO: flathub/com.twinleaf.AppGtk
+  # flatpak/flatpak-builder-tools commit the generator script is fetched from.
+  BUILDER_TOOLS_REF: 737c0085912f9f7dabf9341d4608e2a77a51a73a
+
+jobs:
+  flathub-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the tagged release
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Generate cargo-sources.json
+        run: |
+          pip install aiohttp tomlkit
+          curl -fsSL -o flatpak-cargo-generator.py \
+            "https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/${BUILDER_TOOLS_REF}/cargo/flatpak-cargo-generator.py"
+          python3 flatpak-cargo-generator.py Cargo.lock -o cargo-sources.json
+
+      - name: Check out the Flathub manifest repo
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.FLATHUB_REPO }}
+          token: ${{ secrets.FLATHUB_TOKEN }}
+          path: flathub-repo
+
+      - name: Update manifest and open the PR
+        env:
+          GH_TOKEN: ${{ secrets.FLATHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          COMMIT=$(git rev-parse HEAD)
+          # Rewrite the tag/commit pin in the template, keeping everything else.
+          sed -e "s|^\(\s*tag:\).*|\1 ${RELEASE_TAG}|" \
+              -e "s|^\(\s*commit:\).*|\1 ${COMMIT}|" \
+              packaging/flathub/com.twinleaf.AppGtk.yaml \
+              > flathub-repo/com.twinleaf.AppGtk.yaml
+          cp cargo-sources.json packaging/flathub/flathub.json flathub-repo/
+
+          cd flathub-repo
+          git config user.name "twinleaf-release-bot"
+          git config user.email "kornack@twinleaf.com"
+          BRANCH="release-${RELEASE_TAG}"
+          git checkout -b "$BRANCH"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Manifest already up to date for ${RELEASE_TAG}; nothing to do."
+            exit 0
+          fi
+          git commit -m "Update to ${RELEASE_TAG}"
+          git push -u origin "$BRANCH"
+          gh pr create \
+            --repo "$FLATHUB_REPO" \
+            --title "Update to ${RELEASE_TAG}" \
+            --body "Automated update to [${RELEASE_TAG}](https://github.com/twinleaf/twinleaf-app-gtk/releases/tag/${RELEASE_TAG}) (commit ${COMMIT}). cargo-sources.json regenerated from the tagged Cargo.lock."

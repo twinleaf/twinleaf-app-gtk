@@ -83,6 +83,41 @@ Install the desktop entry (`linux/com.twinleaf.AppGtk.desktop`) and the icons
 (`linux/icons/hicolor/...`) into the usual XDG locations for a non-bundled
 local install.
 
+### Flathub
+
+Flathub is pull-based: its Buildbot builds and publishes from a dedicated
+`flathub/com.twinleaf.AppGtk` repo holding just the manifest — binaries are
+never pushed to it. Two pieces here support that:
+
+- **`flathub/com.twinleaf.AppGtk.yaml`** — the offline manifest (git source
+  pinned to a release tag + `cargo-sources.json`; Flathub forbids network
+  during build). Validated locally against the GNOME 50 runtime.
+- **`.github/workflows/flathub.yml`** — on every GitHub release, regenerates
+  `cargo-sources.json` from the tagged `Cargo.lock`, rewrites the manifest's
+  `tag:`/`commit:` pin, and opens the update PR against the Flathub repo.
+  Needs a `FLATHUB_TOKEN` secret (PAT of a Flathub maintainer with write
+  access to `flathub/com.twinleaf.AppGtk`).
+
+**One-time submission** (before the automation can work):
+
+1. Generate the build sources:
+   ```sh
+   pip install aiohttp tomlkit
+   curl -fsSLO https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
+   python3 flatpak-cargo-generator.py Cargo.lock -o cargo-sources.json
+   ```
+2. Fork `github.com/flathub/flathub`, create a branch **off the `new-pr`
+   branch**, add `com.twinleaf.AppGtk.yaml` (from `packaging/flathub/`, tag
+   pin pointing at a real release), `cargo-sources.json`, and `flathub.json`;
+   open a PR against `flathub:new-pr`.
+3. Review notes: `--device=all` is justified as "USB CDC-ACM serial
+   instruments — no portal covers tty devices". The metainfo already carries
+   the screenshot, OARS rating, and developer tag Flathub requires.
+4. After acceptance, Flathub creates `flathub/com.twinleaf.AppGtk` and invites
+   the submitter as maintainer; mint the `FLATHUB_TOKEN` PAT then, and verify
+   the app at https://flathub.org (DNS or well-known file on twinleaf.com)
+   for the verified badge.
+
 ### Serial-port permissions
 
 On stock distros `/dev/ttyACM*` is `root:dialout` mode 0660, so the app can't
