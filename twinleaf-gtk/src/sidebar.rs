@@ -55,6 +55,10 @@ pub struct Sidebar {
     /// Unified RPC groups (≥2 sensors): reveal per-device rows when the sensors'
     /// values disagree.
     unified_groups: RefCell<Vec<UnifiedGroup>>,
+    /// Per-section expanded state (keyed by group + section), so a collapse
+    /// survives rebuilds (metadata changes, unify toggles). Rc: the expander
+    /// notify handlers share it.
+    expanded: Rc<RefCell<HashMap<String, bool>>>,
 }
 
 impl Sidebar {
@@ -93,6 +97,7 @@ impl Sidebar {
             value_labels: RefCell::new(HashMap::new()),
             rpc_rows: RefCell::new(Vec::new()),
             unified_groups: RefCell::new(Vec::new()),
+            expanded: Rc::new(RefCell::new(HashMap::new())),
         });
 
         {
@@ -182,25 +187,24 @@ impl Sidebar {
                 self.content.append(&serial);
             }
 
-            for stream in &group.streams {
-                let sh = gtk::Label::new(Some(&stream.title));
-                sh.set_xalign(0.0);
-                sh.set_margin_start(8);
-                sh.add_css_class("dim-label");
-                self.content.append(&sh);
+            // Sections share a collapse-state key namespace; include the serial
+            // so two non-unified devices of the same model don't share state.
+            let section_key = |section: &str| format!("{}/{}/{section}", group.label, group.serial);
 
+            for stream in &group.streams {
+                let body = gtk::Box::new(gtk::Orientation::Vertical, 6);
                 for chan in &stream.channels {
-                    self.append_channel_row(chan);
+                    self.append_channel_row(&body, chan);
                 }
+                self.content.append(&self.section_expander(
+                    section_key(&stream.title),
+                    &stream.title,
+                    body,
+                ));
             }
 
             if !group.rpcs.is_empty() {
-                let sh = gtk::Label::new(Some("Settings"));
-                sh.set_xalign(0.0);
-                sh.set_margin_start(8);
-                sh.set_margin_top(4);
-                sh.add_css_class("dim-label");
-                self.content.append(&sh);
+                let body = gtk::Box::new(gtk::Orientation::Vertical, 6);
 
                 for rpc in &group.rpcs {
                     // A settable RPC shared by ≥2 sensors gets a combined
@@ -216,7 +220,7 @@ impl Sidebar {
                             &self.controls,
                             None,
                         );
-                        self.content.append(&row_widget);
+                        body.append(&row_widget);
 
                         let container = gtk::Box::new(gtk::Orientation::Vertical, 2);
                         container.set_margin_start(16);
@@ -236,7 +240,7 @@ impl Sidebar {
                                 control: pcontrol,
                             });
                         }
-                        self.content.append(&container);
+                        body.append(&container);
                         self.unified_groups.borrow_mut().push(UnifiedGroup {
                             members: rpc.members.clone(),
                             combined,
@@ -251,18 +255,42 @@ impl Sidebar {
                             &self.controls,
                             None,
                         );
-                        self.content.append(&row_widget);
+                        body.append(&row_widget);
                         self.rpc_rows.borrow_mut().push(RpcRow {
                             members: rpc.members.clone(),
                             control,
                         });
                     }
                 }
+                self.content.append(&self.section_expander(
+                    section_key("settings"),
+                    "Settings",
+                    body,
+                ));
             }
         }
     }
 
-    fn append_channel_row(&self, chan: &Channel) {
+    /// Wrap a section body in a disclosure-triangle expander whose expanded
+    /// state is remembered (per section key) across sidebar rebuilds.
+    fn section_expander(&self, key: String, title: &str, body: gtk::Box) -> gtk::Expander {
+        let label = gtk::Label::new(Some(title));
+        label.set_xalign(0.0);
+        label.add_css_class("dim-label");
+
+        body.set_margin_top(4);
+        let expander = gtk::Expander::new(None);
+        expander.set_label_widget(Some(&label));
+        expander.set_child(Some(&body));
+        expander.set_expanded(self.expanded.borrow().get(&key).copied().unwrap_or(true));
+        let map = self.expanded.clone();
+        expander.connect_expanded_notify(move |e| {
+            map.borrow_mut().insert(key.clone(), e.is_expanded());
+        });
+        expander
+    }
+
+    fn append_channel_row(&self, parent: &gtk::Box, chan: &Channel) {
         if chan.keys.len() <= 1 {
             // Single device: checkbox + inline value.
             let plotted = chan.keys.first().map_or(false, |k| {
@@ -287,7 +315,7 @@ impl Sidebar {
             value.add_css_class("numeric");
             row.append(&check);
             row.append(&value);
-            self.content.append(&row);
+            parent.append(&row);
             if let Some(first) = chan.keys.first() {
                 self.value_labels.borrow_mut().insert(first.clone(), value);
             }
@@ -297,7 +325,7 @@ impl Sidebar {
             let header = gtk::Label::new(Some(&chan.label));
             header.set_xalign(0.0);
             header.set_margin_start(4);
-            self.content.append(&header);
+            parent.append(&header);
             for key in &chan.keys {
                 let plotted = {
                     let data = self.state.data.borrow();
@@ -322,7 +350,7 @@ impl Sidebar {
                 value.add_css_class("numeric");
                 row.append(&check);
                 row.append(&value);
-                self.content.append(&row);
+                parent.append(&row);
                 self.value_labels.borrow_mut().insert(key.clone(), value);
             }
         }
