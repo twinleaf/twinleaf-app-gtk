@@ -12,3 +12,4 @@
 /secrets-out/
 *.p12
 *.p12.b64
+/packaging/flathub/cargo-sources.json
