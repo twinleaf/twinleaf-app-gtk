@@ -60,5 +60,11 @@ mkdir -p "$OUT/share/icons"
 cp -r "$PREFIX/share/icons/Adwaita" "$OUT/share/icons/" 2>/dev/null || true
 cp -r "$PREFIX/share/icons/hicolor" "$OUT/share/icons/" 2>/dev/null || true
 rm -rf "$OUT/share/icons/Adwaita/cursors" 2>/dev/null || true
+# Our app icon (shared PNG set) so the window/taskbar icon resolves by name.
+for s in 16 32 64 128 256 512; do
+  mkdir -p "$OUT/share/icons/hicolor/${s}x${s}/apps"
+  cp "packaging/linux/icons/hicolor/${s}x${s}/apps/com.twinleaf.AppGtk.png" \
+    "$OUT/share/icons/hicolor/${s}x${s}/apps/"
+done
 
 echo ">> bundled $OUT"

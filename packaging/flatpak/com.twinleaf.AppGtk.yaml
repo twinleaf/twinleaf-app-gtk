@@ -7,7 +7,7 @@
 # `sources:` list, and remove the `build-args: --share=network` below.
 id: com.twinleaf.AppGtk
 runtime: org.gnome.Platform
-runtime-version: '47'
+runtime-version: '50'
 sdk: org.gnome.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
@@ -32,10 +32,20 @@ modules:
       - install -Dm755 target/release/twinleaf-gtk /app/bin/twinleaf-gtk
       - install -Dm644 packaging/linux/com.twinleaf.AppGtk.desktop
         /app/share/applications/com.twinleaf.AppGtk.desktop
-      - install -Dm644 packaging/linux/com.twinleaf.AppGtk.svg
-        /app/share/icons/hicolor/scalable/apps/com.twinleaf.AppGtk.svg
+      # (1024px stays in the repo for the macOS .icns but exceeds Flatpak's
+      # 512x512 export limit, so it is not installed here.)
+      - for s in 16 32 64 128 256 512; do
+        install -Dm644 packaging/linux/icons/hicolor/${s}x${s}/apps/com.twinleaf.AppGtk.png
+        /app/share/icons/hicolor/${s}x${s}/apps/com.twinleaf.AppGtk.png; done
       - install -Dm644 packaging/linux/com.twinleaf.AppGtk.metainfo.xml
         /app/share/metainfo/com.twinleaf.AppGtk.metainfo.xml
     sources:
       - type: dir
         path: ../..
+        skip:
+          # Keep local build state out of the source copy (target/ alone can
+          # be multiple GB after a native build).
+          - target
+          - .flatpak-builder
+          - build-dir
+          - vendor/twinleaf-rust/target

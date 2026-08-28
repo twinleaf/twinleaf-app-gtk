@@ -1,5 +1,9 @@
 /target
 **/target
+# flatpak-builder state/output from local packaging builds
+/.flatpak-builder/
+/build-dir/
+/*.flatpak
 **/*.rs.bk
 .DS_Store
 # Local-only: machine-specific Homebrew pkg-config paths for the gtk4 build.

@@ -121,7 +121,12 @@ the plot canvas is theme-aware, and settings live in a separate `AdwPreferencesW
 
 **Partial:**
 
-- 🟡 **M10** — packaging scaffolding (`.gitlab-ci.yml`, Flatpak manifest, `.desktop`, macOS bundle script) written; not yet validated on real Linux/Windows/macOS builders.
+- 🟡 **M10** — packaging. **Linux is validated**: the Flatpak (GNOME 50
+  runtime) builds, installs, and was verified streaming live data from a real
+  COMM-USB sensor on Ubuntu 24.04, with the `.desktop`/metainfo passing
+  `desktop-file-validate` and `appstreamcli validate` (see
+  `packaging/README.md`). Windows/macOS bundle scripts are written but not yet
+  validated on real builders.
 
 Headless smoke tests behind `TWINLEAF_SELFTEST_*` env hooks (see
 `twinleaf-gtk/src/window.rs`) and the `twinleaf-core-headless` bin reproduce the

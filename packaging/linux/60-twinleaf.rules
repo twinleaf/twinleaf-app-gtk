@@ -1,0 +1,13 @@
+# udev rule granting desktop users access to Twinleaf sensors.
+#
+# Twinleaf devices (COMM-USB etc.) enumerate as USB CDC-ACM serial ports under
+# the ST-Micro VCP id (0483:5740), so match the manufacturer string instead of
+# the vendor id to open up only Twinleaf hardware. The "uaccess" tag gives the
+# active seated user an ACL on the device node (any systemd distro); with it,
+# users don't need to be in the dialout/uucp group.
+#
+# Install (native/manual installs; Flatpak cannot ship udev rules):
+#   sudo cp 60-twinleaf.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload && sudo udevadm trigger
+# (Must be numbered below 73 so it runs before 73-seat-late.rules.)
+SUBSYSTEM=="tty", SUBSYSTEMS=="usb", ATTRS{manufacturer}=="Twinleaf*", TAG+="uaccess"

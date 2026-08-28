@@ -30,14 +30,15 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$LIB"
 cp "$BIN" "$APP/Contents/MacOS/twinleaf-gtk-bin"
 
-# Bundle icon: convert the placeholder SVG to .icns when the tools are present
-# (the app still launches without it).
+# Bundle icon: compose the .icns from the shared PNG set (the real app icon,
+# imported from the twinleaf-app repo). The app still launches without it.
 ICON=""
-if command -v rsvg-convert >/dev/null && command -v iconutil >/dev/null; then
+if command -v iconutil >/dev/null; then
   ICONSET="build/Twinleaf.iconset"; rm -rf "$ICONSET"; mkdir -p "$ICONSET"
+  PNGS=packaging/linux/icons/hicolor
   for s in 16 32 128 256 512; do
-    rsvg-convert -w "$s" -h "$s" packaging/linux/com.twinleaf.AppGtk.svg -o "$ICONSET/icon_${s}x${s}.png"
-    rsvg-convert -w "$((s*2))" -h "$((s*2))" packaging/linux/com.twinleaf.AppGtk.svg -o "$ICONSET/icon_${s}x${s}@2x.png"
+    cp "$PNGS/${s}x${s}/apps/com.twinleaf.AppGtk.png" "$ICONSET/icon_${s}x${s}.png"
+    cp "$PNGS/$((s*2))x$((s*2))/apps/com.twinleaf.AppGtk.png" "$ICONSET/icon_${s}x${s}@2x.png"
   done
   iconutil -c icns "$ICONSET" -o "$RES/Twinleaf.icns" && ICON=Twinleaf.icns || ICON=""
 fi

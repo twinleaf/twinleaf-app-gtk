@@ -6,6 +6,6 @@ Comment=Discover, plot, log, and configure Twinleaf quantum sensors
 Exec=twinleaf-gtk
 Icon=com.twinleaf.AppGtk
 Terminal=false
-Categories=Science;Utility;DataVisualization;
+Categories=Science;DataVisualization;
 Keywords=twinleaf;sensor;magnetometer;plot;tio;
 StartupNotify=true

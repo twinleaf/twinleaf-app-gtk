@@ -2,8 +2,9 @@
 
 Cross-platform distribution for `twinleaf-gtk`. App id: `com.twinleaf.AppGtk`.
 
-These are working starting points; treat the Flatpak/macOS manifests as
-templates to validate on a real builder.
+The Flatpak path is validated end-to-end on Ubuntu 24.04 (built, installed,
+and verified streaming from a real COMM-USB sensor). Treat the macOS/Windows
+scripts as templates to validate on a real builder.
 
 ## CI / releases (GitHub Actions)
 
@@ -12,7 +13,7 @@ templates to validate on a real builder.
   `.gitlab-ci.yml`, which still runs on code.twinleaf.com.
 - **`.github/workflows/release.yml`** — on a `v*` tag (or manual dispatch with a
   tag input) builds and attaches to one GitHub Release:
-  - **Linux**: `com.twinleaf.AppGtk.flatpak` (Flatpak single-file bundle, GNOME 47 runtime).
+  - **Linux**: `com.twinleaf.AppGtk.flatpak` (Flatpak single-file bundle, GNOME 50 runtime).
   - **Windows**: `twinleaf-gtk-windows-x86_64.zip` (portable; MSYS2/UCRT64 build + `bundle-windows.sh`).
   - **macOS**: `twinleaf-gtk-macos-{arm64,x86_64}.zip` (self-contained `Twinleaf.app`; signed + notarized when secrets are set).
 
@@ -39,7 +40,8 @@ right-click → Open once, or `xattr -dr com.apple.quarantine Twinleaf.app`).
 > **Expect 1–2 CI round-trips to go fully green.** The fiddly parts are the
 > Windows DLL/loader collection (`bundle-windows.sh`) and the macOS dylib/loader
 > relinking (`bundle-macos.sh`) — both can't be validated off-runner. The app
-> icon (`linux/com.twinleaf.AppGtk.svg`) and `metainfo.xml` are placeholders.
+> icon (`linux/icons/hicolor/*/apps/com.twinleaf.AppGtk.png`, imported from
+> the `twinleaf-app` repo's AppIcon set) is shared by all three platforms.
 
 ## Linux
 
@@ -54,12 +56,43 @@ Two common paths:
   flatpak-builder --user --install --force-clean build-dir \
     packaging/flatpak/com.twinleaf.AppGtk.yaml
   ```
+  Prerequisites (one-time): `apt install flatpak-builder`, then install the
+  runtime/SDK — note flathub must be configured as a **user** remote for a
+  `--user` build:
+  ```sh
+  flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+  flatpak install --user flathub org.gnome.Platform//50 org.gnome.Sdk//50 \
+    org.freedesktop.Sdk.Extension.rust-stable//25.08
+  ```
+  To produce the distributable single-file bundle (what CI attaches to a
+  release), add `--repo=repo` to the build, then:
+  ```sh
+  flatpak build-bundle repo com.twinleaf.AppGtk.flatpak com.twinleaf.AppGtk master
+  ```
+  Smoke-test the installed sandboxed app against real hardware with the
+  selftest hooks:
+  ```sh
+  flatpak run --env=TWINLEAF_SELFTEST_CONNECT=serial:///dev/ttyACM0 \
+    --env=TWINLEAF_SELFTEST_QUIT=20 com.twinleaf.AppGtk
+  ```
 - **AppImage**: build `--release`, then bundle `libgtk-4` and its deps with
   [linuxdeploy](https://github.com/linuxdeploy/linuxdeploy) + its GTK plugin,
   shipping the `.desktop` file and an icon.
 
-Install the desktop entry (`linux/com.twinleaf.AppGtk.desktop`) and an icon into
-the usual XDG locations for a non-bundled local install.
+Install the desktop entry (`linux/com.twinleaf.AppGtk.desktop`) and the icons
+(`linux/icons/hicolor/...`) into the usual XDG locations for a non-bundled
+local install.
+
+### Serial-port permissions
+
+On stock distros `/dev/ttyACM*` is `root:dialout` mode 0660, so the app can't
+open the sensor until the user either joins the `dialout` group (`uucp` on
+Arch) or a udev rule grants access. `linux/60-twinleaf.rules` tags Twinleaf
+hardware `uaccess` (per-seat ACL, no group needed) — native packages should
+install it to `/usr/lib/udev/rules.d/`; see the comments in the file for
+manual installation. This applies equally to the Flatpak: `--device=all`
+exposes the device node inside the sandbox, but the host's file permissions
+still decide whether it can be opened.
 
 ## macOS
 
