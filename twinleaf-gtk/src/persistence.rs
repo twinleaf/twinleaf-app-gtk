@@ -27,6 +27,10 @@ pub struct Preferences {
     pub capture_auto_delay_seconds: f64,
     /// Start recording to a `.tio` automatically once a connection is streaming.
     pub start_logging_on_connect: bool,
+    /// When auto-selecting the default plot after connect, skip comm/hub
+    /// interface boards so the first real sensor's data is shown instead
+    /// (mirrors the SwiftUI app's "Skip comm/hub default graph").
+    pub skip_comm_hub_default_plot: bool,
 }
 
 impl Default for Preferences {
@@ -43,6 +47,7 @@ impl Default for Preferences {
             show_status_bar: false,
             capture_auto_delay_seconds: 0.5,
             start_logging_on_connect: false,
+            skip_comm_hub_default_plot: true,
         }
     }
 }

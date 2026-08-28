@@ -208,25 +208,43 @@ pub fn device_list(value: &Value) -> Vec<AvailableDevice> {
     array_field(value, "devices")
 }
 
-/// `metadata` payload -> connected devices with streams/columns/rpcs.
-/// The default channel to display when a session opens (a fresh connect or an
-/// opened file): the first column (lowest column index) of the lowest-id stream
-/// that carries data (has columns). Returns `None` if nothing is plottable.
-pub fn default_display_column(devices: &[DeviceInfo]) -> Option<ColumnKeyDto> {
+/// The channels to display when a session opens (a fresh connect or an opened
+/// file): every column of the lowest-id data-bearing stream of the first
+/// device — skipping comm/hub interface boards when `skip_comm_hub` is set, so
+/// e.g. a VMR behind a COMM hub is plotted instead of the hub's own IMU
+/// (mirroring the SwiftUI app). Empty if nothing qualifies, including when
+/// every device is a comm/hub.
+pub fn default_display_columns(devices: &[DeviceInfo], skip_comm_hub: bool) -> Vec<ColumnKeyDto> {
     devices
         .iter()
-        .flat_map(|device| &device.streams)
-        .filter(|stream| !stream.columns.is_empty())
-        .min_by_key(|stream| stream.stream_id)
-        .and_then(|stream| {
-            stream
-                .columns
-                .iter()
-                .min_by_key(|column| column.key.column_index)
+        .filter(|device| {
+            !skip_comm_hub
+                || !(is_comm_or_hub_board_name(&device.meta.name)
+                    || is_comm_or_hub_board_name(&device.route))
         })
-        .map(|column| column.key.clone())
+        .find_map(|device| {
+            let stream = device
+                .streams
+                .iter()
+                .filter(|stream| !stream.columns.is_empty())
+                .min_by_key(|stream| stream.stream_id)?;
+            let mut columns: Vec<ColumnKeyDto> =
+                stream.columns.iter().map(|c| c.key.clone()).collect();
+            columns.sort_by_key(|key| key.column_index);
+            Some(columns)
+        })
+        .unwrap_or_default()
 }
 
+/// True for comm/hub interface boards (e.g. "COMM-USB"), which relay data for
+/// the sensors behind them; their own streams (IMU etc.) aren't what the user
+/// connected for.
+fn is_comm_or_hub_board_name(raw: &str) -> bool {
+    let name = raw.trim().trim_matches('/').to_ascii_lowercase();
+    name.starts_with("comm") || name.starts_with("hub")
+}
+
+/// `metadata` payload -> connected devices with streams/columns/rpcs.
 pub fn metadata_devices(value: &Value) -> Vec<DeviceInfo> {
     array_field(value, "devices")
 }
@@ -267,10 +285,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_display_column_picks_lowest_stream_with_data_first_column() {
+    fn default_display_columns_picks_lowest_data_stream_whole() {
         // Streams out of order, an empty (data-less) stream, and columns out of
-        // index order — the default is stream 2 (lowest with data; 0 is empty),
-        // column 0 (lowest index).
+        // index order — the default is every column of stream 2 (lowest with
+        // data; 0 is empty), in column-index order.
         let devices: Vec<DeviceInfo> = serde_json::from_value(serde_json::json!([{
             "route": "/",
             "streams": [
@@ -285,16 +303,51 @@ mod tests {
             ]
         }]))
         .unwrap();
-        let key = default_display_column(&devices).expect("a plottable column");
-        assert_eq!(key.stream_id, 2);
-        assert_eq!(key.column_index, 0);
+        let keys = default_display_columns(&devices, true);
+        assert_eq!(keys.len(), 2);
+        assert!(keys.iter().all(|k| k.stream_id == 2));
+        assert_eq!(keys[0].column_index, 0);
+        assert_eq!(keys[1].column_index, 1);
 
-        // No plottable columns → None.
+        // No plottable columns → empty.
         let empty: Vec<DeviceInfo> = serde_json::from_value(serde_json::json!([{
             "route": "/",
             "streams": [{"streamId": 1, "columns": []}]
         }]))
         .unwrap();
-        assert!(default_display_column(&empty).is_none());
+        assert!(default_display_columns(&empty, true).is_empty());
+    }
+
+    #[test]
+    fn default_display_columns_skips_comm_hub_boards() {
+        // A COMM hub (with its own IMU stream) listed before the sensor behind
+        // it: the sensor's stream wins, even though the hub comes first.
+        let devices: Vec<DeviceInfo> = serde_json::from_value(serde_json::json!([
+            {
+                "route": "/",
+                "meta": {"name": "COMM-USB"},
+                "streams": [{"streamId": 1, "columns": [
+                    {"key": {"route": "/", "streamId": 1, "columnIndex": 0}}
+                ]}]
+            },
+            {
+                "route": "/0",
+                "meta": {"name": "VMR"},
+                "streams": [{"streamId": 1, "columns": [
+                    {"key": {"route": "/0", "streamId": 1, "columnIndex": 0}}
+                ]}]
+            }
+        ]))
+        .unwrap();
+        let keys = default_display_columns(&devices, true);
+        assert!(keys.iter().all(|k| k.route == "/0"));
+        assert!(!keys.is_empty());
+
+        // Preference off → the hub's own stream is eligible again.
+        assert_eq!(default_display_columns(&devices, false)[0].route, "/");
+
+        // Every device a comm/hub → nothing is auto-selected.
+        let hubs_only = &devices[..1].to_vec();
+        assert!(default_display_columns(hubs_only, true).is_empty());
     }
 }

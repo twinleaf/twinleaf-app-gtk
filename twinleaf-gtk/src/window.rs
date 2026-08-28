@@ -1038,8 +1038,12 @@ fn handle_event(ctx: &EventCtx, event: CoreEvent) {
                         .iter()
                         .all(|p| p.columns.is_empty());
                     if no_columns {
-                        if let Some(key) = model::default_display_column(&devices) {
-                            state.toggle_column(key, true);
+                        let defaults = model::default_display_columns(
+                            &devices,
+                            crate::persistence::Preferences::load().skip_comm_hub_default_plot,
+                        );
+                        if !defaults.is_empty() {
+                            state.toggle_columns(defaults, true);
                         }
                         // Self-test extras, driven off that default selection.
                         if std::env::var_os("TWINLEAF_SELFTEST_CONNECT").is_some() {

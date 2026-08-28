@@ -234,21 +234,6 @@ impl AppState {
         }
     }
 
-    /// Add or remove a column from pane 0 (the sidebar checkboxes), then resync.
-    pub fn toggle_column(&self, key: ColumnKeyDto, active: bool) {
-        {
-            let mut data = self.data.borrow_mut();
-            if data.panes.is_empty() {
-                data.panes.push(PaneState::default());
-            }
-            data.panes[0].columns.retain(|k| k != &key);
-            if active {
-                data.panes[0].columns.push(key);
-            }
-        }
-        self.resync_plot();
-    }
-
     /// Add or remove a set of columns from pane 0 together (a unified channel
     /// toggles every matching device's column at once), then resync.
     pub fn toggle_columns(&self, keys: Vec<ColumnKeyDto>, active: bool) {

@@ -90,6 +90,16 @@ pub fn show_preferences(
     // Plotting.
     let plotting = adw::PreferencesGroup::new();
     plotting.set_title("Plotting");
+    let skip_hub_row = adw::SwitchRow::new();
+    skip_hub_row.set_title("Skip comm/hub default graph");
+    skip_hub_row.set_subtitle("Auto-plot the first sensor's data instead of a comm/hub board's");
+    skip_hub_row.set_active(prefs.skip_comm_hub_default_plot);
+    skip_hub_row.connect_active_notify(move |row| {
+        let mut prefs = Preferences::load();
+        prefs.skip_comm_hub_default_plot = row.is_active();
+        prefs.save();
+    });
+    plotting.add(&skip_hub_row);
     let window_adj = gtk::Adjustment::new(prefs.window_seconds, 1.0, 1000.0, 1.0, 10.0, 0.0);
     let window_row = adw::SpinRow::new(Some(&window_adj), 1.0, 0);
     window_row.set_title("Default plot window");
