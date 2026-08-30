@@ -2084,7 +2084,7 @@ dependencies = [
 
 [[package]]
 name = "twinleaf-core"
-version = "0.1.0"
+version = "0.1.6"
 dependencies = [
  "async-channel",
  "crossbeam",
@@ -2096,7 +2096,7 @@ dependencies = [
 
 [[package]]
 name = "twinleaf-gtk"
-version = "0.1.0"
+version = "0.1.6"
 dependencies = [
  "async-channel",
  "cairo-rs",

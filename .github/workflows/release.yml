@@ -38,6 +38,21 @@ jobs:
         with:
           submodules: recursive
 
+      # Fail the whole release (publish-release needs this job) if the sources
+      # being built don't declare the version the tag names — the workspace
+      # Cargo.toml and the newest metainfo <release> must both match the tag.
+      - name: Verify versions match the release tag
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#v}"
+          CARGO="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          METAINFO="$(sed -n 's/.*<release version="\([^"]*\)".*/\1/p' \
+            packaging/linux/com.twinleaf.AppGtk.metainfo.xml | head -1)"
+          ok=true
+          [ "$CARGO" = "$VERSION" ] || { echo "::error::workspace Cargo.toml version is $CARGO but the tag is $RELEASE_TAG"; ok=false; }
+          [ "$METAINFO" = "$VERSION" ] || { echo "::error::newest metainfo <release> is $METAINFO but the tag is $RELEASE_TAG — add an entry before tagging"; ok=false; }
+          $ok
+
       - name: Build Flatpak bundle
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:

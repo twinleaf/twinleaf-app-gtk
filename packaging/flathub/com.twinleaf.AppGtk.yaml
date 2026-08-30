@@ -39,10 +39,12 @@ modules:
       - install -Dm644 packaging/linux/com.twinleaf.AppGtk.metainfo.xml
         /app/share/metainfo/com.twinleaf.AppGtk.metainfo.xml
     sources:
-      # The two lines below are rewritten by .github/workflows/flathub.yml on
-      # each release; keep them on separate lines.
+      # Placeholder pin: the tag/commit lines below are rewritten to the real
+      # release values by .github/workflows/flathub.yml on every release (the
+      # commit here cannot be current — it would have to name the commit that
+      # contains it). Keep them on separate lines.
       - type: git
         url: https://github.com/twinleaf/twinleaf-app-gtk.git
-        tag: v0.1.0
+        tag: v0.1.6
         commit: 7dd51b1fd3f124e8c6ad79fba8c801aa98704ec3
       - cargo-sources.json

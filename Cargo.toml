@@ -15,7 +15,7 @@ members = ["twinleaf-core", "twinleaf-gtk"]
 exclude = ["vendor"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.6"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://code.twinleaf.com/twinleaf/twinleaf-app-gtk"
